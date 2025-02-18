@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeChat</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <h1>DeChat</h1>
+    <a href="about.html">New to <b>DeChat</b>? , Click here ;)</a>
+    <button id="createKey">Create Key</button>
+    <div class="joinArea">
+        <input type="text" id="roomKey" placeholder="Enter Room Key"><button id="joinRoom">Join</button>
+    </div>
+
+    
+    <div id="displayRoomKey"></div>
+    <div id="memberColorBalls"></div>
+    
+    
+    <div id="chatBox"></div>
+    <div class="sendArea"><input type="text" id="message" placeholder="Type freely..."/><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const user = io()
+        const sendbtn = document.getElementById('sendbtn')
+        const roomKey = document.getElementById('roomKey')
+        const joinBtn = document.getElementById('joinRoom')
+        const keyBtn = document.getElementById('createKey')
+        let chatBox = document.getElementById('chatBox')
+        const sendSound = new Audio('send.wav');
+        const receiveSound = new Audio('receive.wav');
+        const joinSound = new Audio('newJoin1.wav');
+        const delSound = new Audio('delete_msg.wav')
+        let memberColorBalls = document.getElementById('memberColorBalls')
+        let displayRoomKey = document.getElementById('displayRoomKey')
+        let key = ''
+        let user_id = ''
+        
+
+        keyBtn.addEventListener('click' , (e) => {
+            key = ''
+            let chars = 'ABCDEFGHIJKL0123456789MNOPQRST@$&_UVWXYZ'
+            let nums = ''
+            for(let i = 0 ; i<11 ; i++){
+                let index = Math.floor(Math.random()*chars.length)
+                key += chars[index]
+            }
+            console.log(key) 
+            displayRoomKey.innerText = key
+            roomKey.value = key
+        })
+
+
+        joinBtn.addEventListener('click' , (e) => {
+            if(displayRoomKey.innerText === '') displayRoomKey.innerText = roomKey.value
+            if(roomKey.value === '') return
+            user.emit('joinRoom' , roomKey.value )
+            
+        })
+
+
+        user.on('TakeUserId' , (userId) => {
+            if(user_id == ''){
+                user_id = userId
+                console.log(user_id) 
+            }
+        })
+
+        sendbtn.addEventListener('click' , (e) => {
+            const message = document.getElementById('message').value
+            user.emit('send_message' , message)
+            console.log(message)
+            sendSound.play()
+        })
+
+        user.on('message' , ({ msg , userColor } , sender , msg_index) => {
+            let newMsg = document.createElement('p')
+            console.log('Msg Index: ' , msg_index)
+            newMsg.setAttribute('id' , msg_index)
+            if(sender == user_id){
+                newMsg.innerHTML = `${msg} <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button>`
+            }
+            else{
+                newMsg.innerText = msg
+                receiveSound.play()
+            }
+            newMsg.style.color = userColor
+            chatBox.appendChild(newMsg)
+            chatBox.scrollTop = chatBox.scrollHeight;
+            console.log(msg)
+        })
+
+        function removeMsg(del_index){
+            delSound.play()
+            user.emit('deleteMsg' , del_index)
+        }
+
+        user.on('delfromChatBox' , (msgToDel) => {
+            let delmsg = document.getElementById(msgToDel)
+            console.log('index returned from backend: ' , msgToDel)
+            if(delmsg){
+                delmsg.remove()
+            }
+        })
+
+
+        user.on('userDisconnected' , () => {
+            joinSound.play()
+        })
+
+        user.on('addMemberBall' , (assignedColorsList) => {
+            memberColorBalls.innerHTML = ''
+            assignedColorsList.forEach((color) => {
+                let ball = document.createElement('div')
+                ball.setAttribute('class' , 'memberBall')
+                ball.setAttribute('id' , color)
+                ball.style.backgroundColor = color
+                memberColorBalls.appendChild(ball)
+            })
+        })
+
+
+        user.on('removeMemberColorBall' , (color) => {
+            let memberColorBalls = document.getElementById('memberColorBalls')
+            removeBall = document.getElementById(color)
+            memberColorBalls.removeChild(removeBall)
+        })
+
+        user.on('RoomLimitReached' , (msg) => {
+            displayRoomKey.innerText = msg
+        })
+    </script>
+</body>
+</html>
