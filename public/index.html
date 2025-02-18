@@ -71,7 +71,12 @@
 
         sendbtn.addEventListener('click' , (e) => {
             const message = document.getElementById('message').value
+            if(message.value === ''){
+                console.log('Inside the empty msg.')
+                return
+            }
             user.emit('send_message' , message)
+            message.value = ''
             console.log(message)
             sendSound.play()
         })
