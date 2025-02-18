@@ -22,9 +22,9 @@
     
     <div id="chatBox"></div>
     <div class="sendArea"><input type="text" id="message" placeholder="Type freely..."/><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://dechat-602c.onrender.com/socket.io/socket.io.js"></script>
     <script>
-        const user = io()
+        const user = io('https://dechat-602c.onrender.com')
         const sendbtn = document.getElementById('sendbtn')
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
