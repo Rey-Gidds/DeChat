@@ -68,7 +68,6 @@ io.on('connection' , user => {
 
         user.on('send_message' , (msg) => {
             let userColor = rooms[roomKey][user.id]
-            console.log({ msg , userColor })
             console.log('Sender: ' , user.id)
             msg_index[roomKey]++
             io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey])
