@@ -66,6 +66,11 @@ io.on('connection' , user => {
         
         console.log('A Dechatter just Slid in.')
 
+        user.on('editMsg' , (msg_index_for_edit , msg) => {
+            let userColor = rooms[roomKey][user.id]
+            io.to(roomKey).emit('msgEdited' , { msg , userColor } , user.id , msg_index_for_edit)
+        })
+
         user.on('send_message' , (msg) => {
             let userColor = rooms[roomKey][user.id]
             console.log('Sender: ' , user.id)

@@ -81,7 +81,7 @@ input {
 /* Messages */
 #chatBox p {
     background: #444;
-    padding: 12px;
+    padding: 8px;
     max-width: 99%; /* Prevents messages from being too wide */
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -96,8 +96,13 @@ input {
     font-size: 16px;
 }
 
+.msgBtnContainer{
+    display: flex;
+    flex-direction: row;
+}
+
 /* New Aesthetic Delete Button */
-.DelBtns {
+.DelBtns , .EditBtn {
     background-color: black; 
     color: white;
     width: fit-content;
@@ -115,12 +120,12 @@ input {
     box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
 }
 
-.DelBtns:hover {
+.DelBtns:hover , .EditBtn:hover{
     background-color: grey; /* Lighter purple on hover */
     transform: scale(1.1);
 }
 
-.DelBtns:active {
+.DelBtns:active , .EditBtn:active{
     background-color: black; /* Slightly darker on click */
     transform: scale(0.95);
 }

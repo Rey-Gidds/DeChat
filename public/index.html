@@ -22,14 +22,15 @@
     
     <div id="chatBox"></div>
     <div class="sendArea"><input type="text" id="message" placeholder="Type freely..."/><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
-    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const user = io('https://dechat-o5h4.onrender.com')
+        const user = io()
         const sendbtn = document.getElementById('sendbtn')
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
         const keyBtn = document.getElementById('createKey')
         let chatBox = document.getElementById('chatBox')
+        let message = document.getElementById('message')
         const sendSound = new Audio('send.wav');
         const receiveSound = new Audio('receive.wav');
         const joinSound = new Audio('newJoin1.wav');
@@ -38,6 +39,8 @@
         let displayRoomKey = document.getElementById('displayRoomKey')
         let key = ''
         let user_id = ''
+        let isEdit = false
+        let msg_to_edit_index = null
         
 
         keyBtn.addEventListener('click' , (e) => {
@@ -70,8 +73,14 @@
         })
 
         sendbtn.addEventListener('click' , (e) => {
-            let message = document.getElementById('message')
             if(message.value === ''){
+                return
+            }
+            else if(isEdit){
+                user.emit('editMsg' , msg_to_edit_index , message.value)
+                console.log(message.value)
+                message.value = ''
+                sendSound.play()
                 return
             }
             user.emit('send_message' , message.value)
@@ -85,7 +94,7 @@
             console.log('Msg Index: ' , msg_index)
             newMsg.setAttribute('id' , msg_index)
             if(sender == user_id){
-                newMsg.innerHTML = `${msg} <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button>`
+                newMsg.innerHTML = `${msg} <div class='msgBtnContainer'><button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index} , "${msg}")'><i class="fa-solid fa-pencil"></i></button> <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button></div>`
             }
             else{
                 newMsg.innerText = msg
@@ -96,6 +105,29 @@
             chatBox.scrollTop = chatBox.scrollHeight;
             console.log(msg)
         })
+
+        user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit) => {
+            // Not showing up on the console
+            console.log('Inside the edited msg function !')
+
+            let editedMsg = document.getElementById(msg_index_for_edit)
+            editedMsg.style.color = userColor
+            if(sender == user_id){
+                editedMsg.innerHTML = `${msg} <div class='msgBtnContainer'><button class='EditBtn' data-value='${msg_index_for_edit}' onclick='editMsg(${msg_index_for_edit} , "${msg}")'><i class="fa-solid fa-pencil"></i></button> <button class='DelBtns' data-value='${msg_index_for_edit}' onclick='removeMsg(${msg_index_for_edit})'><i class="fa-solid fa-trash"></i></button></div>`
+            }
+            else{
+                editedMsg.innerText = msg
+            }
+            isEdit = false
+        })
+
+        function editMsg(edit_index , msg){
+            console.log(edit_index , msg)
+            message.value = msg
+            isEdit = true
+            msg_to_edit_index = edit_index
+        }
+
 
         function removeMsg(del_index){
             delSound.play()
