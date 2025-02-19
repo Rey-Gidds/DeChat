@@ -142,6 +142,10 @@
             }
         })
 
+        user.on('DoubleConnectionDenied' , () => {
+            displayRoomKey.innerText = 'Double connection is not allowed , Please refresh and reconnect 😔'
+            roomKey.value = ''
+        })
 
         user.on('userDisconnected' , () => {
             joinSound.play()

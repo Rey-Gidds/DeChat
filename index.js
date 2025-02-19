@@ -25,8 +25,6 @@ function assignColors(colors){
 }
 
 io.on('connection' , user => {
-    console.log('A new user has connected' , user.id)
-
     user.on('joinRoom' , (roomKey) => {
         if(!rooms[roomKey]){
             rooms[roomKey] = {}
@@ -38,8 +36,21 @@ io.on('connection' , user => {
             user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
             return
         }
+        // of operator is used to directly access the elements of the array returned by the Object.keys(rooms) by their values.
+        for (let room of Object.keys(rooms)) {
+            console.log('Room the user was previously in.' , room)
+            let usersInRoom = Object.keys(rooms[room]) // Object.keys() return an array that is why that array is stored in a seperate variable to use the .includes() method.
+            if (usersInRoom.includes(user.id)) {
+                delete rooms[roomKey]
+                delete assignedColors[roomKey]
+                delete msg_index[roomKey]
+                delete roomColors[roomKey]
+                console.log('Rooms: ' , rooms)
+                user.emit('DoubleConnectionDenied')
+                return;
+            }
+        }
         user.join(roomKey)
-
         let index = assignColors(roomColors[roomKey])
 
         io.to(roomKey).emit('TakeUserId' , user.id)
@@ -62,7 +73,7 @@ io.on('connection' , user => {
         io.to(roomKey).emit('addMemberBall' , assignedColors[roomKey])
 
         console.log(roomColors , roomColors[roomKey].length)
-        console.log(rooms)
+        
         
         console.log('A Dechatter just Slid in.')
 
