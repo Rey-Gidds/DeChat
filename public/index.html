@@ -19,9 +19,8 @@
     <div id="displayRoomKey"></div>
     <div id="memberColorBalls"></div>
     
-    
     <div id="chatBox"></div>
-    <div class="sendArea"><input type="text" id="message" placeholder="Type freely..."/><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
+    <div class="sendArea"><textarea id="message" placeholder="Type freely..." rows="1"/></textarea><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script>
         const user = io('https://dechat-o5h4.onrender.com')
@@ -40,29 +39,49 @@
         let key = ''
         let user_id = ''
         let isEdit = false
+        let isJoined = false
         let msg_to_edit_index = null
         
 
         keyBtn.addEventListener('click' , (e) => {
             key = ''
+            if(isJoined) return
             let chars = 'ABCDEFGHIJKL0123456789MNOPQRST@$&_UVWXYZ'
             let nums = ''
             for(let i = 0 ; i<11 ; i++){
                 let index = Math.floor(Math.random()*chars.length)
                 key += chars[index]
             }
-            console.log(key) 
-            displayRoomKey.innerText = key
+            console.log(key)
+            user.emit('joinRoom' , key )
+            isJoined = true
+            displayRoomKey.innerText = `Joined Room: ${key}`
             roomKey.value = key
         })
 
 
         joinBtn.addEventListener('click' , (e) => {
-            if(displayRoomKey.innerText === '') displayRoomKey.innerText = `Joined Room: ${roomKey.value}`
-            if(roomKey.value === '') return
+            if(isJoined){
+                console.log('Is Joined')
+                return
+            }
+            else if(roomKey.value === '') return
+            else if(displayRoomKey.innerText === '') displayRoomKey.innerText = `Joined Room: ${roomKey.value}`
             user.emit('joinRoom' , roomKey.value )
-            
+            isJoined = true
         })
+
+
+        message.addEventListener('focus' , () => {
+            console.log('Typing')
+            user.emit('typing')
+        })
+
+        message.addEventListener('blur' , () => {
+            console.log('DeTyping...')
+            user.emit('stoppedTyping')
+        })
+
 
 
         user.on('TakeUserId' , (userId) => {
@@ -71,6 +90,35 @@
                 console.log(user_id) 
             }
         })
+
+        user.on('addtypingball' , (userColor) => {
+            console.log('User Color for Typing: ' , userColor)
+            let typingBubble = createTypingBubbleElement()
+            chatBox.appendChild(typingBubble)
+            let ball = document.createElement('div')
+            ball.setAttribute('class' , 'typingBall')
+            ball.setAttribute('id' , `typing_ball_${userColor}`)
+            ball.style.backgroundColor = userColor
+            typingBubble.appendChild(ball)
+            chatbox.scrollTop = chatbox.scrollHeight;
+        })
+
+        function createTypingBubbleElement(){
+            typingBubble = document.createElement('div')
+            typingBubble.setAttribute('id' , 'typingBalls')
+            return typingBubble
+        }
+
+        user.on('removetypingBall' , (userColor) => {
+            console.log('User Color for Typing: ' , userColor)
+            let removeBall = document.getElementById(`typing_ball_${userColor}`)
+            let typingBubble = document.getElementById('typingBalls')
+            removeBall.remove()
+            if(typingBubble.innerHTML == ''){
+                typingBubble.remove()
+            }
+        })
+        
 
         sendbtn.addEventListener('click' , (e) => {
             if(message.value === ''){
@@ -140,11 +188,6 @@
             if(delmsg){
                 delmsg.remove()
             }
-        })
-
-        user.on('DoubleConnectionDenied' , () => {
-            displayRoomKey.innerText = 'Double connection is not allowed , Please refresh and reconnect 😔'
-            roomKey.value = ''
         })
 
         user.on('userDisconnected' , () => {
