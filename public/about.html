@@ -77,11 +77,39 @@
             font-weight: bold;
         }
 
+        footer {
+            width: 90vw;
+            height: 10vh;
+            color: #bbb;
+            text-align: center;
+            padding: 20px 0;
+            margin-top: 40px;
+        }
+
+        .footer-container {
+            font-size: 16px;
+        }
+
+        .footer-container p{
+            text-align: center;
+        }
+
+        .highlight {
+            color: #bb86fc;
+            font-weight: bold;
+        }
+
+        @media screen and (max-width: 600px) {
+            .footer-container {
+                font-size: 14px;
+            }
+}
         @media (max-width: 600px) {
             #content {
-                width: 92%;
+                width: 90%;
                 padding: 20px;
                 margin: auto;
+                margin-left: -3px;
             }
 
             h1 {
@@ -131,6 +159,14 @@
         <p>DeChat does <b>not store</b> any messages or user data. All chats are temporary and deleted upon exit. <b>Users are responsible</b> for their actions. DeChat holds no liability for any misconduct occurring on the platform.</p>
         
         <a href="index.html">⬅️ Back to DeChat</a>
+
+        
     </div>
+    <footer>
+        <div class="footer-container">
+            <p>Made with 💖 by <span class="highlight">Reyansh Ashok Gidwani</span></p>
+            <p>Powered by <span class="highlight">Adani University</span></p>
+        </div>
+    </footer>
 </body>
 </html>
