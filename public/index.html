@@ -91,10 +91,15 @@
             }
         })
 
-        user.on('addtypingball' , (userColor) => {
+        user.on('addtypingball' , (userColor , isBubble) => {
             console.log('User Color for Typing: ' , userColor)
-            let typingBubble = createTypingBubbleElement()
-            chatBox.appendChild(typingBubble)
+            if(!isBubble){
+                let typingBubble = createTypingBubbleElement()
+                chatBox.appendChild(typingBubble)
+            }
+            else{
+                typingBubble = document.getElementById('typingBalls')
+            }
             let ball = document.createElement('div')
             ball.setAttribute('class' , 'typingBall')
             ball.setAttribute('id' , `typing_ball_${userColor}`)
@@ -116,6 +121,7 @@
             removeBall.remove()
             if(typingBubble.innerHTML == ''){
                 typingBubble.remove()
+                user.emit('updateBubbleFlag' , false)
             }
         })
         

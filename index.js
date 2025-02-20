@@ -11,6 +11,7 @@ const rooms = {}
 const roomColors = {}
 const assignedColors = {}
 const msg_index = {}
+let isBubble = {}
 
 app.use(express.static(path.resolve('./public')))
 
@@ -31,6 +32,7 @@ io.on('connection' , user => {
             roomColors[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
+            isBubble[roomKey] = false
         }
         else if(Object.keys(rooms[roomKey]).length >= 8) {
             user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
@@ -71,12 +73,18 @@ io.on('connection' , user => {
 
         user.on('typing' , () => {
             let userColor = rooms[roomKey][user.id]
-            io.to(roomKey).emit('addtypingball' , userColor)
+            let activeBubble = isBubble[roomKey]
+            io.to(roomKey).emit('addtypingball' , userColor , activeBubble)
+            isBubble[roomKey] = true
         })
 
         user.on('stoppedTyping' , () => {
             let userColor = rooms[roomKey][user.id]
             io.to(roomKey).emit('removetypingBall' , userColor)
+        })
+
+        user.on('updateBubbleFlag' , (value) => {
+            isBubble[roomKey] = value
         })
 
         user.on('send_message' , (msg) => {

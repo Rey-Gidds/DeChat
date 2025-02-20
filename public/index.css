@@ -144,7 +144,7 @@ input {
 }
 #typingBalls{
     border-radius: 100%;
-    align-self: flex-end;
+    justify-self: flex-end;
 }
 
 .memberBall , .typingBall{
