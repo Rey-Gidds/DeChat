@@ -21,7 +21,7 @@ a:visited , a:active{
     text-decoration: none;
 }
 
-h1 {
+.heading {
     margin-bottom: 10px;
     font-size: 40px;
     text-align: center;
@@ -29,8 +29,7 @@ h1 {
 
 /* Chat Box - Centered & Wider */
 #chatBox {
-    width: 90%;
-    max-width: 600px;
+    width: 97%;
     height: 400px;
     overflow-y: auto;  /* Enables vertical scrolling */
     overflow-x: hidden; /* Prevents horizontal scrolling */
@@ -85,13 +84,13 @@ input {
 #chatBox p {
     background: #444;
     padding: 8px;
-    max-width: 99%; /* Prevents messages from being too wide */
+    max-width: 98%; /* Prevents messages from being too wide */
     word-wrap: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
     word-break: break-all;
     border-radius: 5px;
-    margin: 5px 0;
+    margin: 3px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -101,6 +100,7 @@ input {
 .msgBtnContainer{
     display: flex;
     flex-direction: row;
+    align-self: flex-start;
 }
 
 /* New Aesthetic Delete Button */
@@ -197,12 +197,12 @@ input {
 
 /* Mobile Responsiveness */
 @media screen and (max-width: 600px) {
-    h1 {
-        font-size: 35px;
+    .heading {
+        font-size: 40px;
     }
 
     #chatBox {
-        width: 95%;
+        width: 97%;
         height: 300px;
         overflow-y: auto;
     }
@@ -210,9 +210,15 @@ input {
     .sendArea {
         width: 98%;
         padding: 10px;
+        transform: translate(0px , -20px);
     }
 
     #message {
         width: 180px;
+        height: 40px;
+    }
+
+    .sendArea button{
+        transform: translate(0px , -5px);
     }
 }
