@@ -183,7 +183,7 @@ input {
     padding: 10px;
     font-size: 16px;
     font-family: 'Franklin Gothic Medium', 'Arial Narrow';
-    font-weight: 100;
+    font-weight: normal;
     resize: vertical;
     min-height: 20px;
     width: 100%;
