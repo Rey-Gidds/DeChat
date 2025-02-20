@@ -58,7 +58,7 @@
 
 
         joinBtn.addEventListener('click' , (e) => {
-            if(displayRoomKey.innerText === '') displayRoomKey.innerText = roomKey.value
+            if(displayRoomKey.innerText === '') displayRoomKey.innerText = `Joined Room: ${roomKey.value}`
             if(roomKey.value === '') return
             user.emit('joinRoom' , roomKey.value )
             
