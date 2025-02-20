@@ -5,7 +5,6 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: space-between;
-    height: 100vh;
     background-color: #1e1e1e;
     color: #ffffff;
     margin: 0;
@@ -195,6 +194,30 @@ input {
     border-radius: 5px;
 }
 
+footer {
+    width: 95vw;
+    height: 10vh;
+    color: #bbb;
+    text-align: center;
+    padding: 20px 0;
+    margin-top: 40px;
+}
+
+.footer-container {
+    font-size: 16px;
+}
+
+.highlight {
+    color: #bb86fc;
+    font-weight: bold;
+}
+
+@media screen and (max-width: 600px) {
+    .footer-container {
+        font-size: 14px;
+    }
+}
+
 /* Mobile Responsiveness */
 @media screen and (max-width: 600px) {
     .heading {
@@ -210,7 +233,7 @@ input {
     .sendArea {
         width: 98%;
         padding: 10px;
-        transform: translate(0px , -20px);
+        transform: translate(0px , -10px);
     }
 
     #message {
