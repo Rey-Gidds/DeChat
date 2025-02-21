@@ -160,6 +160,7 @@
             chatBox.appendChild(newMsg)
             if(chatBox.contains(typingBubble)){
                 chatBox.appendChild(typingBubble)
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
             chatBox.scrollTop = chatBox.scrollHeight;
             console.log(msg)
