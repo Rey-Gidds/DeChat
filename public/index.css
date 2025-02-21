@@ -102,8 +102,46 @@ input {
     align-self: flex-start;
 }
 
+
+.repliedMsg {
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 3px solid #25D366; /* WhatsApp green */
+    padding: 5px;
+    margin: 5px 0;
+    font-size: 14px;
+    border-radius: 5px;
+    color: #ddd;
+}
+
+.replyingMsg {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 3px solid #25D366;
+    padding: 8px;
+    font-size: 14px;
+    margin-top: 5px;
+    border-radius: 5px;
+    color: #ddd;
+    position: relative;
+}
+
+.replyingMsg button {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.replyingMsg button:hover {
+    color: #fff;
+}
+
+
 /* New Aesthetic Delete Button */
-.DelBtns , .EditBtn {
+.DelBtns , .EditBtn , .replyMsg{
     background-color: black; 
     color: white;
     width: fit-content;

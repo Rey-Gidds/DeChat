@@ -12,6 +12,7 @@ const roomColors = {}
 const assignedColors = {}
 const msg_index = {}
 const isBubble = {}
+const isReplying = {}
 
 app.use(express.static(path.resolve('./public')))
 
@@ -33,6 +34,7 @@ io.on('connection' , user => {
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
             isBubble[roomKey] = false
+            isReplying[roomKey] = false
         }
         else if(Object.keys(rooms[roomKey]).length >= 8) {
             user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
@@ -96,6 +98,15 @@ io.on('connection' , user => {
 
         user.on('deleteMsg' , (msgToDel) => {
             io.to(roomKey).emit('delfromChatBox' , msgToDel)
+        })
+
+        user.on('reply_to_msg' , (msg , color) => {
+            console.log('Saved the replied_msg = ' , msg)
+            console.log('Saved the replied_color = ' , color)
+            isReplying[roomKey] = true
+            let replying = isReplying[roomKey]
+            io.to(roomKey).emit('updateReplyingFlag' , replying)
+            io.to(roomKey).emit('replyingToMsg' , msg , color , replying)
         })
 
         user.on('disconnect' , () => {
