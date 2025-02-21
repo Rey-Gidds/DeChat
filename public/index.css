@@ -103,7 +103,7 @@ input {
 }
 
 /* New Aesthetic Delete Button */
-.DelBtns , .EditBtn {
+.DelBtns , .EditBtn , .replyMsg{
     background-color: black; 
     color: white;
     width: fit-content;

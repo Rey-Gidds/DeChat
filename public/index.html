@@ -18,7 +18,6 @@
     
     <div id="displayRoomKey"></div>
     <div id="memberColorBalls"></div>
-    
     <div id="chatBox"></div>
     <div class="sendArea"><textarea id="message" placeholder="Type freely..." rows="1"/></textarea><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
@@ -28,12 +27,12 @@
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
         const keyBtn = document.getElementById('createKey')
+        const sendSound = new Audio('send.wav')
+        const receiveSound = new Audio('receive.wav')
+        const joinSound = new Audio('newJoin1.wav')
+        const delSound = new Audio('Remove_Msg.flac')
         let chatBox = document.getElementById('chatBox')
         let message = document.getElementById('message')
-        const sendSound = new Audio('send.wav');
-        const receiveSound = new Audio('receive.wav');
-        const joinSound = new Audio('newJoin1.wav');
-        const delSound = new Audio('Remove_Msg.flac')
         let memberColorBalls = document.getElementById('memberColorBalls')
         let displayRoomKey = document.getElementById('displayRoomKey')
         let key = ''
@@ -107,7 +106,7 @@
             ball.style.backgroundColor = userColor
             typingBubble.appendChild(ball)
             chatBox.appendChild(typingBubble)
-            chatbox.scrollTop = chatbox.scrollHeight;
+            chatBox.scrollTop = chatBox.scrollHeight;
         })
 
         function createTypingBubbleElement(){
@@ -147,17 +146,17 @@
 
         user.on('message' , ({ msg , userColor } , sender , msg_index) => {
             let newMsg = document.createElement('p')
-            console.log('Msg Index: ' , msg_index)
+            newMsg.style.color = userColor
             newMsg.setAttribute('id' , msg_index)
             if(sender == user_id){
                 newMsg.innerHTML = `${msg} <div class='msgBtnContainer'><button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index} , "${msg}")'><i class="fa-solid fa-pencil"></i></button> <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button></div>`
             }
             else{
-                newMsg.innerText = msg
+                newMsg.innerHTML = `${msg} <button class='replyMsg' onclick='replyMsg("${msg}" , "${userColor}")'><i class="fa-solid fa-reply"></i></button>`
                 receiveSound.play()
             }
             
-            newMsg.style.color = userColor
+            
             chatBox.appendChild(newMsg)
             if(chatBox.contains(typingBubble)){
                 chatBox.appendChild(typingBubble)
