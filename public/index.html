@@ -96,6 +96,7 @@
             if(!isBubble){
                 let typingBubble = createTypingBubbleElement()
                 chatBox.appendChild(typingBubble)
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
             else{
                 typingBubble = document.getElementById('typingBalls')
