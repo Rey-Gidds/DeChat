@@ -152,7 +152,7 @@
                 newMsg.innerHTML = `${msg} <div class='msgBtnContainer'><button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index} , "${msg}")'><i class="fa-solid fa-pencil"></i></button> <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button></div>`
             }
             else{
-                newMsg.innerHTML = `${msg} <button class='replyMsg' onclick='replyMsg("${msg}" , "${userColor}")'><i class="fa-solid fa-reply"></i></button>`
+                newMsg.innerText = msg
                 receiveSound.play()
             }
             
