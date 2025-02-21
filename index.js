@@ -11,7 +11,7 @@ const rooms = {}
 const roomColors = {}
 const assignedColors = {}
 const msg_index = {}
-let isBubble = {}
+const isBubble = {}
 
 app.use(express.static(path.resolve('./public')))
 
@@ -120,8 +120,10 @@ io.on('connection' , user => {
                 delete roomColors[roomKey]
                 delete assignedColors[roomKey]
                 delete rooms[roomKey]
+                delete isBubble[roomKey]
                 delete msg_index[roomKey]
             }
+            console.log(isBubble)
         })
     })
 })
