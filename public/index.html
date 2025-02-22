@@ -19,6 +19,8 @@
     <div id="displayRoomKey"></div>
     <div id="memberColorBalls"></div>
     <div id="chatBox"></div>
+
+    <div id="replyPreviewContainer"> </div>
     <div class="sendArea"><textarea id="message" placeholder="Type freely..." rows="1"/></textarea><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script>
@@ -32,6 +34,7 @@
         const joinSound = new Audio('newJoin1.wav')
         const delSound = new Audio('Remove_Msg.flac')
         let chatBox = document.getElementById('chatBox')
+        let replyPreviewContainer = document.getElementById('replyPreviewContainer')
         let message = document.getElementById('message')
         let memberColorBalls = document.getElementById('memberColorBalls')
         let displayRoomKey = document.getElementById('displayRoomKey')
@@ -39,7 +42,10 @@
         let user_id = ''
         let isEdit = false
         let isJoined = false
+        let isReplying = false
         let msg_to_edit_index = null
+        let replying_msg = ''
+        let replying_color = ''
         
 
         keyBtn.addEventListener('click' , (e) => {
@@ -138,32 +144,95 @@
                 sendSound.play()
                 return
             }
-            user.emit('send_message' , message.value)
+            user.emit('send_message' , message.value , isReplying)
             message.value = ''
             console.log(message.value)
             sendSound.play()
         })
 
-        user.on('message' , ({ msg , userColor } , sender , msg_index) => {
-            let newMsg = document.createElement('p')
-            newMsg.style.color = userColor
-            newMsg.setAttribute('id' , msg_index)
-            if(sender == user_id){
-                newMsg.innerHTML = `${msg} <div class='msgBtnContainer'><button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index} , "${msg}")'><i class="fa-solid fa-pencil"></i></button> <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'><i class="fa-solid fa-trash"></i></button></div>`
+        
+
+        user.on('message', ({ msg, userColor }, sender, msg_index, replying_flag) => {
+            let msgContainer = document.createElement('div'); // Main container
+            msgContainer.className = 'msgBubble';
+            msgContainer.style.color = userColor;
+            msgContainer.setAttribute('id', msg_index);
+
+            if (replying_flag) {
+                console.log('Replying to the msg...');
+                let replyMsg = document.createElement('div');
+                replyMsg.className = 'replyMsg';
+                replyMsg.style.color = replying_color;
+                replyMsg.innerHTML = `
+                    <span class="replyText">${replying_msg}</span>
+                    <button class='replyBtn' onclick='reply("${replying_msg}" , "${replying_color}")'>
+                        <i class="fa-solid fa-reply"></i>
+                    </button>
+                `;
+                msgContainer.appendChild(replyMsg); // Add reply message inside the same bubble
             }
-            else{
-                newMsg.innerText = msg
-                receiveSound.play()
+
+            let newMsg = document.createElement('p');
+            newMsg.className = 'messageContent';
+            newMsg.innerHTML = `<div>${msg}</div>`;
+
+            if (sender == user_id) {
+                newMsg.innerHTML += `
+                    <div class='msgBtnContainer'>
+                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}")'>
+                            <i class="fa-solid fa-pencil"></i>
+                        </button>
+                        <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+            } else {
+                newMsg.innerHTML += `
+                    <button class='replyBtn' onclick='reply("${msg}", "${userColor}")'>
+                        <i class="fa-solid fa-reply"></i>
+                    </button>
+                `;
+                receiveSound.play();
+            }
+
+            msgContainer.appendChild(newMsg); // Add actual message to the bubble
+
+            chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
+
+            if (chatBox.contains(typingBubble)) {
+                chatBox.appendChild(typingBubble);
             }
             
-            
-            chatBox.appendChild(newMsg)
-            if(chatBox.contains(typingBubble)){
-                chatBox.appendChild(typingBubble)
-                chatBox.scrollTop = chatBox.scrollHeight;
-            }
             chatBox.scrollTop = chatBox.scrollHeight;
-            console.log(msg)
+            cancelReply();
+            console.log(msg);
+        });
+
+
+        function reply(msg , color){
+            let replyPreview = document.createElement('div')
+            replyPreview.className = 'replyPreview'
+            replyPreview.innerHTML = `Replying to: ${msg} <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
+            replyPreview.style.color = color
+            replyPreviewContainer.appendChild(replyPreview)
+            console.log('before sending to backend: ' , msg , color)
+            user.emit('update_reply_flag_for_everyone' , true , msg , color)
+        }
+
+        function cancelReply(){
+            replying_msg = ''
+            replying_color = ''
+            replyPreviewContainer.innerHTML = ''
+            user.emit('update_reply_flag_for_everyone' , false , '' , '')
+        }
+
+        user.on('grab_updated_reply_flag' , (updated_flag , rmsg , rcolor) => {
+            isReplying = updated_flag
+            replying_msg = rmsg
+            replying_color = rcolor
+            console.log('Replying Flag: ' , isReplying)
+            console.log('replying msg and color' , replying_msg , replying_color)
         })
 
         user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit) => {

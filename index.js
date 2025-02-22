@@ -87,15 +87,19 @@ io.on('connection' , user => {
             isBubble[roomKey] = value
         })
 
-        user.on('send_message' , (msg) => {
+        user.on('send_message' , (msg , flag) => {
             let userColor = rooms[roomKey][user.id]
             console.log('Sender: ' , user.id)
             msg_index[roomKey]++
-            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey])
+            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] , flag)
         })
 
         user.on('deleteMsg' , (msgToDel) => {
             io.to(roomKey).emit('delfromChatBox' , msgToDel)
+        })
+
+        user.on('update_reply_flag_for_everyone' , (flag , rmsg , rcolor) => {
+            io.to(roomKey).emit('grab_updated_reply_flag' , flag , rmsg , rcolor)
         })
 
         user.on('disconnect' , () => {
