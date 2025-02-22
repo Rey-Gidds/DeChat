@@ -138,6 +138,7 @@ io.on('connection' , user => {
                 delete rooms[roomKey]
                 delete isBubble[roomKey]
                 delete msg_index[roomKey]
+                delete isReplying[roomKey]
             }
             console.log(isBubble)
         })
