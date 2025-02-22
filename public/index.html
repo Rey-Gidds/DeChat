@@ -211,6 +211,7 @@
 
 
         function reply(msg , color){
+            replyPreviewContainer.innerHTML = ''
             let replyPreview = document.createElement('div')
             replyPreview.className = 'replyPreview'
             replyPreview.innerHTML = `Replying to: ${msg} <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
@@ -218,6 +219,7 @@
             replyPreviewContainer.appendChild(replyPreview)
             console.log('before sending to backend: ' , msg , color)
             user.emit('update_reply_flag_for_everyone' , true , msg , color)
+            message.scrollTop = message.scrollHeight
         }
 
         function cancelReply(){
