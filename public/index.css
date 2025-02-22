@@ -182,12 +182,12 @@ input {
     box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
 }
 
-.DelBtns:hover , .EditBtn:hover{
+.DelBtns:hover , .EditBtn:hover , .cancelReplyBtn:hover , .replyBtn:hover{
     background-color: grey; /* Lighter purple on hover */
     transform: scale(1.1);
 }
 
-.DelBtns:active , .EditBtn:active{
+.DelBtns:active , .EditBtn:active , .cancelReplyBtn:hover , .replyBtn:hover{
     background-color: black; /* Slightly darker on click */
     transform: scale(0.95);
 }

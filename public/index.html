@@ -42,6 +42,7 @@
         let user_id = ''
         let isEdit = false
         let isJoined = false
+        let isScrolling = false
         let msg_to_edit_index = null
         
         message.value = ''
@@ -77,12 +78,10 @@
 
 
         message.addEventListener('focus' , () => {
-            console.log('Typing')
             user.emit('typing')
         })
 
         message.addEventListener('blur' , () => {
-            console.log('DeTyping...')
             user.emit('stoppedTyping')
         })
 
@@ -90,12 +89,10 @@
         user.on('TakeUserId' , (userId) => {
             if(user_id == ''){
                 user_id = userId
-                console.log(user_id) 
             }
         })
 
         user.on('addtypingball' , (userColor , isBubble) => {
-            console.log('User Color for Typing: ' , userColor)
             if(!isBubble){
                 let typingBubble = createTypingBubbleElement()
                 chatBox.appendChild(typingBubble)
@@ -120,7 +117,6 @@
         }
 
         user.on('removetypingBall' , (userColor) => {
-            console.log('User Color for Typing: ' , userColor)
             let removeBall = document.getElementById(`typing_ball_${userColor}`)
             let typingBubble = document.getElementById('typingBalls')
             removeBall.remove()
@@ -137,7 +133,6 @@
             }
             else if(isEdit){
                 user.emit('editMsg' , msg_to_edit_index , message.value)
-                console.log(message.value)
                 message.value = ''
                 sendSound.play()
                 return
@@ -148,7 +143,17 @@
             sendSound.play()
         })
 
-        
+        let scrollTimeout;
+        chatBox.addEventListener('scroll' , () => {
+            isScrolling = true
+
+            clearTimeout(scrollTimeout)
+
+            scrollTimeout = setTimeout(() => {
+                isScrolling = false
+            } , 2000)
+        })
+
 
         user.on('message', ({ msg, userColor }, sender, msg_index, replying_flag , rmsg , rcolor) => {
 
@@ -158,7 +163,6 @@
             msgContainer.setAttribute('id', msg_index);
 
             if (replying_flag) {
-                console.log('Replying to the msg...');
                 let replyMsg = document.createElement('div');
                 replyMsg.className = 'replyMsg';
                 replyMsg.style.color = rcolor;
@@ -203,10 +207,11 @@
             if (chatBox.contains(typingBubble)) {
                 chatBox.appendChild(typingBubble);
             }
-            
-            scrollToBottomChatBox()
-            
-            console.log(msg);
+
+            if(!isScrolling){
+                scrollToBottomChatBox()
+            }
+
         });
 
         function scrollToBottomChatBox(){
@@ -233,7 +238,6 @@
 
 
         user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit) => {
-            console.log('Inside the edited msg function !')
             
             let editedMsgContainer = document.getElementById(msg_index_for_edit)
 
@@ -257,7 +261,7 @@
                 `;
             } else {
                 editedMsg.innerHTML += `
-                    <button class='replyBtn' onclick='reply("${msg}", "${userColor}")'>
+                    <button class='replyBtn' onclick='reply("${msg}" , "${userColor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
@@ -268,7 +272,6 @@
         })
 
         function editMsg(edit_index , msg){
-            console.log(edit_index , msg)
             message.value = msg
             isEdit = true
             msg_to_edit_index = edit_index
