@@ -12,6 +12,7 @@ const roomColors = {}
 const assignedColors = {}
 const msg_index = {}
 const isBubble = {}
+const isReplying = {}
 
 app.use(express.static(path.resolve('./public')))
 
@@ -33,13 +34,18 @@ io.on('connection' , user => {
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
             isBubble[roomKey] = false
+            isReplying[roomKey] = {}        
         }
         else if(Object.keys(rooms[roomKey]).length >= 8) {
             user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
             return
         }
+
         
         user.join(roomKey)
+
+        isReplying[roomKey][user.id] = [false , '' , '']
+
         let index = assignColors(roomColors[roomKey])
 
         io.to(roomKey).emit('TakeUserId' , user.id)
@@ -87,19 +93,25 @@ io.on('connection' , user => {
             isBubble[roomKey] = value
         })
 
-        user.on('send_message' , (msg , flag) => {
+        user.on('send_message' , (msg) => {
             let userColor = rooms[roomKey][user.id]
+            let flag = isReplying[roomKey][user.id][0]
+            let rmsg = isReplying[roomKey][user.id][1]
+            let rcolor = isReplying[roomKey][user.id][2]
             console.log('Sender: ' , user.id)
             msg_index[roomKey]++
-            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] , flag)
+            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] , flag , rmsg , rcolor)
         })
 
         user.on('deleteMsg' , (msgToDel) => {
             io.to(roomKey).emit('delfromChatBox' , msgToDel)
         })
 
-        user.on('update_reply_flag_for_everyone' , (flag , rmsg , rcolor) => {
-            io.to(roomKey).emit('grab_updated_reply_flag' , flag , rmsg , rcolor)
+        user.on('update_reply_flag' , (flag , rmsg , rcolor) => {
+            isReplying[roomKey][user.id][0] = flag
+            isReplying[roomKey][user.id][1] = rmsg
+            isReplying[roomKey][user.id][2] = rcolor
+            console.log(isReplying[roomKey])
         })
 
         user.on('disconnect' , () => {

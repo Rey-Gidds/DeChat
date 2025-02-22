@@ -42,11 +42,10 @@
         let user_id = ''
         let isEdit = false
         let isJoined = false
-        let isReplying = false
         let msg_to_edit_index = null
-        let replying_msg = ''
-        let replying_color = ''
         
+        message.value = ''
+        roomKey.value = ''
 
         keyBtn.addEventListener('click' , (e) => {
             key = ''
@@ -86,7 +85,6 @@
             console.log('DeTyping...')
             user.emit('stoppedTyping')
         })
-
 
 
         user.on('TakeUserId' , (userId) => {
@@ -144,7 +142,7 @@
                 sendSound.play()
                 return
             }
-            user.emit('send_message' , message.value , isReplying)
+            user.emit('send_message' , message.value)
             message.value = ''
             console.log(message.value)
             sendSound.play()
@@ -152,7 +150,8 @@
 
         
 
-        user.on('message', ({ msg, userColor }, sender, msg_index, replying_flag) => {
+        user.on('message', ({ msg, userColor }, sender, msg_index, replying_flag , rmsg , rcolor) => {
+
             let msgContainer = document.createElement('div'); // Main container
             msgContainer.className = 'msgBubble';
             msgContainer.style.color = userColor;
@@ -162,10 +161,10 @@
                 console.log('Replying to the msg...');
                 let replyMsg = document.createElement('div');
                 replyMsg.className = 'replyMsg';
-                replyMsg.style.color = replying_color;
+                replyMsg.style.color = rmsg;
                 replyMsg.innerHTML = `
-                    <span class="replyText">${replying_msg}</span>
-                    <button class='replyBtn' onclick='reply("${replying_msg}" , "${replying_color}")'>
+                    <span class="replyText">${rmsg}</span>
+                    <button class='replyBtn' onclick='reply("${rmsg}" , "${rcolor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
@@ -218,24 +217,15 @@
             replyPreview.style.color = color
             replyPreviewContainer.appendChild(replyPreview)
             console.log('before sending to backend: ' , msg , color)
-            user.emit('update_reply_flag_for_everyone' , true , msg , color)
+            user.emit('update_reply_flag' , true , msg , color)
             message.scrollTop = message.scrollHeight
         }
 
         function cancelReply(){
-            replying_msg = ''
-            replying_color = ''
             replyPreviewContainer.innerHTML = ''
-            user.emit('update_reply_flag_for_everyone' , false , '' , '')
+            user.emit('update_reply_flag' , false , '' , '')
         }
 
-        user.on('grab_updated_reply_flag' , (updated_flag , rmsg , rcolor) => {
-            isReplying = updated_flag
-            replying_msg = rmsg
-            replying_color = rcolor
-            console.log('Replying Flag: ' , isReplying)
-            console.log('replying msg and color' , replying_msg , replying_color)
-        })
 
         user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit) => {
             console.log('Inside the edited msg function !')
