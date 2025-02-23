@@ -84,7 +84,7 @@ input {
     width: 97%;
     max-height: fit-content;
     background: #444;
-    padding: 4px;
+    padding: 5px;
     max-width: 98%;
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -99,13 +99,13 @@ input {
 
 .replyMsg{
     display: flex;
-    width: 97%;
+    width: 95%;
     padding: 8px;
     background: #555;
     font-size: 12px;
     border-radius: 20px;
     max-width: 98%;
-    margin-bottom: 2px;
+    margin: 2px;
     flex-direction: row;
     justify-content: space-between;
     align-items: center;

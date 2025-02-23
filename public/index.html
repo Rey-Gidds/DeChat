@@ -96,7 +96,6 @@
             if(!isBubble){
                 let typingBubble = createTypingBubbleElement()
                 chatBox.appendChild(typingBubble)
-                scrollToBottomChatBox()
             }
             else{
                 typingBubble = document.getElementById('typingBalls')
@@ -106,7 +105,6 @@
             ball.setAttribute('id' , `typing_ball_${userColor}`)
             ball.style.backgroundColor = userColor
             typingBubble.appendChild(ball)
-            chatBox.appendChild(typingBubble)
             scrollToBottomChatBox()
         })
 
@@ -121,7 +119,7 @@
             let typingBubble = document.getElementById('typingBalls')
             removeBall.remove()
             if(typingBubble.innerHTML == ''){
-                typingBubble.remove()
+                chatBox.removeChild(typingBubble)
                 user.emit('updateBubbleFlag' , false)
             }
         })
