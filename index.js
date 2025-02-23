@@ -78,10 +78,10 @@ io.on('connection' , user => {
         })
 
         user.on('typing' , () => {
-            isBubble[roomKey] = true
             let userColor = rooms[roomKey][user.id]
             let activeBubble = isBubble[roomKey]
             io.to(roomKey).emit('addtypingball' , userColor , activeBubble)
+            isBubble[roomKey] = true
         })
 
         user.on('stoppedTyping' , () => {
