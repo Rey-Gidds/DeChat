@@ -9,7 +9,7 @@
 </head>
 <body>
     <a href="about.html"><div class="heading">DeChat</div></a>
-    <a href="about.html">New to <b>DeChat</b>? , Click here ;)</a>
+    <a href="about.html">New to <b>DeChat</b>? , Click here !</a>
     <button id="createKey">Create Key</button>
     <div class="joinArea">
         <input type="text" id="roomKey" placeholder="Enter Room Key"><button id="joinRoom">Join</button>
@@ -76,7 +76,7 @@
             isJoined = true
         })
 
-
+        
         message.addEventListener('focus' , () => {
             user.emit('typing')
         })
@@ -180,6 +180,7 @@
             newMsg.innerHTML = `<div>${msg}</div>`;
 
             if (sender == user_id) {
+                msgContainer.style.borderRadius = '20px 20px 2px 20px'
                 newMsg.innerHTML += `
                     <div class='msgBtnContainer'>
                         <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}")'>
@@ -192,6 +193,7 @@
                 `;
                 cancelReply();
             } else {
+                msgContainer.style.borderRadius = '20px 20px 20px 2px'
                 newMsg.innerHTML += `
                     <button class='replyBtn' onclick='reply("${msg}", "${userColor}")'>
                         <i class="fa-solid fa-reply"></i>

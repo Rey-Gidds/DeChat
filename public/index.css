@@ -100,10 +100,10 @@ input {
 .replyMsg{
     display: flex;
     width: 97%;
-    padding: 5px;
+    padding: 8px;
     background: #555;
     font-size: 12px;
-    border-radius: 10px;
+    border-radius: 20px;
     max-width: 98%;
     margin-bottom: 2px;
     flex-direction: row;
@@ -229,22 +229,23 @@ input {
     width: 90%;
     max-width: 650px; /* Slightly wider than chat box */
     background: #353535;
-    padding: 4px;
-    border-radius: 10px;
+    padding: 5px;
+    border-radius: 30px;
     justify-content: space-between;
     align-items: center;
     box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
 }
 
 .sendArea #message {
-    flex-grow: 1;
-    border-radius: 5px;
+    border-radius: 20px;
     border: 2px solid greenyellow;
     padding: 10px;
     font-size: 16px;
     font-family: 'Franklin Gothic Medium', 'Arial Narrow';
     font-weight: normal;
-    resize: vertical;
+    resize: none;
+    overflow-y: auto;
+    max-height: 200px;
     min-height: 20px;
     width: 100%;
 }
@@ -252,7 +253,7 @@ input {
 .sendArea button {
     align-self: flex-start;
     margin-left: 10px;
-    border-radius: 5px;
+    border-radius: 20px;
 }
 
 
@@ -276,10 +277,15 @@ input {
 
     #message {
         width: 180px;
-        height: 40px;
+        height: 20px;
+        resize: none;
+        max-height: 200px;
+        overflow-y: hidden;
+        min-height: 20px;
+        border-radius: 20px;
     }
 
     .sendArea button{
-        transform: translate(0px , -5px);
+        border-radius: 50px;
     }
 }
