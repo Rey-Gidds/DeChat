@@ -117,7 +117,7 @@
         user.on('removetypingBall' , (userColor) => {
             let removeBall = document.getElementById(`typing_ball_${userColor}`)
             let typingBubble = document.getElementById('typingBalls')
-            removeBall.remove()
+            typingBubble.removeChild(removeBall)
             if(typingBubble.innerHTML == ''){
                 chatBox.removeChild(typingBubble)
                 user.emit('updateBubbleFlag' , false)
