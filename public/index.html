@@ -118,7 +118,7 @@
             let removeBall = document.getElementById(`typing_ball_${userColor}`)
             let typingBubble = document.getElementById('typingBalls')
             typingBubble.removeChild(removeBall)
-            if(typingBubble.innerHTML == ''){
+            if(typingBubble.childNodes.length === 0 || typingBubble.textContent === ""){
                 chatBox.removeChild(typingBubble)
                 user.emit('updateBubbleFlag' , false)
             }
@@ -315,6 +315,14 @@
 
         user.on('RoomLimitReached' , (msg) => {
             displayRoomKey.innerText = msg
+        })
+
+        user.on('disconnected' , () => {
+            message.value = ''
+            displayRoomKey.value = ''
+            memberColorBalls.value = ''
+            roomKey.value = ''
+            chatBox.innerHTML = ''
         })
     </script>
 </body>
