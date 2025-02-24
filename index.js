@@ -5,7 +5,12 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const { Socket } = require('dgram');
-const io = new Server(server)
+
+const io = new Server(server , {
+    maxHttpBufferSize: 10e6,
+    pingTimeout: 60000,
+    pingInterval: 25000
+})
 
 const rooms = {}
 const roomColors = {}

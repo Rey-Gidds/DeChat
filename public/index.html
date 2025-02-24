@@ -116,14 +116,17 @@
         }
 
         
-
+        let typingTimeout;
         message.addEventListener('focus' , () => {
-            user.emit('typing')
             scrollToBottomWindow()
+            clearTimeout(typingTimeout)
+            user.emit('typing')
         })
 
         message.addEventListener('blur' , () => {
-            user.emit('stoppedTyping')
+            typingTimeout = setTimeout(() => {
+                user.emit('stoppedTyping')
+            } , 300)
         })
 
 
