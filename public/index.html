@@ -284,6 +284,7 @@
             else{
                 msgContainer.style.borderRadius = '20px 20px 20px 2px'
                 newMsg.innerHTML = `<img src=${file_data} class='chat-img' />`
+                receiveSound.play()
             }
 
             msgContainer.appendChild(newMsg)
@@ -291,6 +292,7 @@
             if (chatBox.contains(typingBubble)) {
                 chatBox.appendChild(typingBubble);
             }
+            scrollToBottomChatBox()
         })
         
 
