@@ -77,6 +77,12 @@ io.on('connection' , user => {
             io.to(roomKey).emit('msgEdited' , { msg , userColor } , user.id , msg_index_for_edit)
         })
 
+        user.on('sendFile' , (file_data , file_type) => {
+            let userColor = rooms[roomKey][user.id]
+            msg_index[roomKey]++
+            io.to(roomKey).emit('receiveFile' , user.id , file_data , file_type , userColor , msg_index[roomKey])
+        })
+
         user.on('typing' , () => {
             let userColor = rooms[roomKey][user.id]
             let activeBubble = isBubble[roomKey]

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>file demo</title>
+    <style>
+        #imageContainer img{
+            width: 200px;
+            height: 200px;
+            display: block;
+            border-radius: 20px;
+        }
+        #imageContainer{
+            background-color: aqua;
+            padding: 20px;
+            width: 300px;
+            height: 300px;
+        }
+    </style>
+</head>
+<body>
+    <input type="file" id="fileInput" style="display: none;"/>
+    <button onclick="document.getElementById('fileInput').click()">📋</button>
+    <div id="imageContainer"></div>
+    <script>
+        const fileInput = document.getElementById('fileInput')
+        fileInput.addEventListener('change' , () => {
+            let file = fileInput.files[0]
+            if(file){
+                let reader = new FileReader()
+                reader.readAsDataURL(file)
+                reader.onload = () => {
+                    let imageContainer = document.getElementById('imageContainer')
+                    imageContainer.innerHTML = `<img src='${reader.result}' />`
+                }
+            }
+        })
+    </script>
+</body>
+</html>

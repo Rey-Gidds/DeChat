@@ -20,8 +20,17 @@
     <div id="memberColorBalls"></div>
     <div id="chatBox"></div>
 
-    <div id="replyPreviewContainer"> </div>
-    <div class="sendArea"><textarea id="message" placeholder="Type freely..." rows="1"/></textarea><button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button></div>
+    <div id="replyPreviewContainer"></div>
+    <div id="imageContainer"></div>
+
+    <div class="sendArea">
+        <textarea id="message" placeholder="Type freely..." rows="1"/></textarea>
+        <input type="file" id="fileInput" style="display: none;">
+        
+        <button id="fileBtn" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-paperclip"></i></button>
+        <button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script>
         const user = io('https://dechat-o5h4.onrender.com')
@@ -33,16 +42,21 @@
         const receiveSound = new Audio('receive.wav')
         const joinSound = new Audio('newJoin1.wav')
         const delSound = new Audio('Remove_Msg.flac')
+        const fileInput = document.getElementById('fileInput')
         let chatBox = document.getElementById('chatBox')
         let replyPreviewContainer = document.getElementById('replyPreviewContainer')
         let message = document.getElementById('message')
+        let imageContainer = document.getElementById('imageContainer')
         let memberColorBalls = document.getElementById('memberColorBalls')
         let displayRoomKey = document.getElementById('displayRoomKey')
         let key = ''
         let user_id = ''
+        let fileData = ''
+        let fileType = ''
         let isEdit = false
         let isJoined = false
         let isScrolling = false
+        let isFile = false
         let msg_to_edit_index = null
         
         message.value = ''
@@ -76,14 +90,42 @@
             isJoined = true
         })
 
+        fileInput.addEventListener('change' , () => {
+            isFile = true
+            let file = fileInput.files[0]
+            if(file){
+                let reader = new FileReader()
+                reader.readAsDataURL(file)
+                reader.onload = () => {
+                    imageContainer.innerHTML = `<img src='${reader.result}' />
+                    <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
+                    fileData = reader.result
+                    fileType = file.type
+                    scrollToBottomWindow()
+                }
+            }
+        })
+
+        function scrollToBottomWindow(){
+            window.scrollTo({top: document.body.scrollHeight , behavior: "smooth"})
+        }
+
+        function cancelImg(){
+            isFile = false
+            imageContainer.innerHTML = ''
+        }
+
         
+
         message.addEventListener('focus' , () => {
             user.emit('typing')
+            scrollToBottomWindow()
         })
 
         message.addEventListener('blur' , () => {
             user.emit('stoppedTyping')
         })
+
 
 
         user.on('TakeUserId' , (userId) => {
@@ -126,7 +168,14 @@
         
 
         sendbtn.addEventListener('click' , (e) => {
-            if(message.value === ''){
+            if(isFile){
+                user.emit('sendFile' , fileData , fileType)
+                console.log('sending the file... ' , fileData ,fileType)
+                cancelImg()
+                sendSound.play()
+                return
+            }
+            else if(message.value === ''){
                 return
             }
             else if(isEdit){
@@ -214,6 +263,37 @@
 
         });
 
+        user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
+            let typingBubble = document.getElementById('typingBalls')
+            let msgContainer = document.createElement('div') // Main container
+            msgContainer.className = 'msgBubble'
+            msgContainer.setAttribute('id', msg_index)
+            msgContainer.style.border = `3px dashed ${userColor}`
+
+            let newMsg = document.createElement('p');
+            newMsg.className = 'messageContent';
+            
+
+            if(sender == user_id){
+                msgContainer.style.borderRadius = '20px 20px 2px 20px'
+                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />
+                <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
+                    <i class="fa-solid fa-trash"></i>
+                </button>`
+            }
+            else{
+                msgContainer.style.borderRadius = '20px 20px 20px 2px'
+                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />`
+            }
+
+            msgContainer.appendChild(newMsg)
+            chatBox.appendChild(msgContainer)
+            if (chatBox.contains(typingBubble)) {
+                chatBox.appendChild(typingBubble);
+            }
+        })
+        
+
         function scrollToBottomChatBox(){
             chatBox.scrollTo({top: chatBox.scrollHeight , behavior: "smooth"})
         }
@@ -228,7 +308,7 @@
             replyPreviewContainer.appendChild(replyPreview)
             console.log('before sending to backend: ' , msg , color)
             user.emit('update_reply_flag' , true , msg , color)
-            window.scrollTo({top: document.body.scrollHeight , behavior: "smooth"})
+            scrollToBottomWindow()
         }
 
         function cancelReply(){
@@ -284,6 +364,7 @@
         }
 
         user.on('delfromChatBox' , (msgToDel) => {
+            isFile = false
             let delmsg = document.getElementById(msgToDel)
             console.log('index returned from backend: ' , msgToDel)
             if(delmsg){

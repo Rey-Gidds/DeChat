@@ -79,6 +79,25 @@ input {
     color: gold;
 }
 
+#imageContainer{
+    display: flex;
+    height: fit-content;
+    width: 90%;
+    justify-content: flex-start;
+    margin-bottom: 20px;
+}
+
+#imageContainer img{
+    position: relative;
+    width: 75px;
+    height: 75px;
+    border-radius: 10px;
+}
+
+#imageContainer #cancelImgBtn{
+    position: absolute;
+}
+
 /* Messages */
 .msgBubble {
     width: 97%;
@@ -91,12 +110,22 @@ input {
     white-space: pre-wrap;
     word-break: break-word;
     border-radius: 10px;
-    margin: 5px 0;
+    margin: 0px auto 0px auto;
     display: flex;
     flex-direction: column;
     align-items: center;
 }
 
+.chat-img{
+    width: 120px;
+    height: 120px;
+    border-radius: 10px;
+    transition: transform 0.3s ease;
+}
+
+.chat-img:active{
+    transform: scale(1.50);
+}
 .replyMsg{
     display: flex;
     width: 95%;
@@ -164,7 +193,7 @@ input {
 }
 
 /* New Aesthetic Delete Button */
-.DelBtns , .EditBtn , .cancelReplyBtn , .replyBtn{
+.DelBtns , .EditBtn , .cancelReplyBtn , .replyBtn , #cancelImgBtn{
     background-color: black; 
     color: white;
     width: fit-content;
@@ -243,7 +272,7 @@ input {
     font-size: 16px;
     font-family: 'Franklin Gothic Medium', 'Arial Narrow';
     font-weight: normal;
-    resize: none;
+    resize: vertical;
     overflow-y: auto;
     max-height: 200px;
     min-height: 20px;
@@ -283,6 +312,7 @@ input {
         overflow-y: hidden;
         min-height: 20px;
         border-radius: 20px;
+        height: 50px;
     }
 
     .sendArea button{
