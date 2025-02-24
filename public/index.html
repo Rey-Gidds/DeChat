@@ -205,14 +205,14 @@
         })
 
 
-        user.on('message', ({ msg, userColor }, sender, msg_index, replying_flag , rmsg , rcolor) => {
+        user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor) => {
 
             let msgContainer = document.createElement('div'); // Main container
             msgContainer.className = 'msgBubble';
             msgContainer.style.color = userColor;
             msgContainer.setAttribute('id', msg_index);
 
-            if (replying_flag) {
+            if (replying_flag && !file_flag) {
                 let replyMsg = document.createElement('div');
                 replyMsg.className = 'replyMsg';
                 replyMsg.style.color = rcolor;
@@ -223,6 +223,18 @@
                     </button>
                 `;
                 msgContainer.appendChild(replyMsg); // Add reply message inside the same bubble
+            }
+            else if(file_flag){
+                let replyMsg = document.createElement('div');
+                replyMsg.className = 'replyMsg';
+                replyMsg.style.border = `2px dashed ${rcolor}`;
+                replyMsg.innerHTML = `
+                    <img src=${rmsg} class='replyImg' />
+                    <button class='replyBtn' onclick='replyFile("${rmsg}" , "${rcolor}")'>
+                        <i class="fa-solid fa-reply"></i>
+                    </button>
+                `;
+                msgContainer.appendChild(replyMsg);
             }
 
             let newMsg = document.createElement('p');
@@ -286,7 +298,10 @@
             }
             else{
                 msgContainer.style.borderRadius = '20px 20px 20px 2px'
-                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />`
+                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />
+                <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
+                    <i class="fa-solid fa-reply"></i>
+                </button>`
                 receiveSound.play()
             }
 
@@ -303,6 +318,22 @@
             chatBox.scrollTo({top: chatBox.scrollHeight , behavior: "smooth"})
         }
 
+        function replyFile(file_data , color){
+            replyPreviewContainer.innerHTML = ''
+            let replyPreview = document.createElement('div')
+            replyPreview.className = 'replyPreview'
+            replyPreview.innerHTML = `
+                <img src=${file_data} class='replyImg' />
+                <button class='cancelReplyBtn' onclick=cancelReply()>
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `
+            replyPreview.style.border = `3px dashed ${color}`
+            replyPreview.style.borderRadius = '10px'
+            replyPreviewContainer.appendChild(replyPreview)
+            user.emit('update_reply_flag' , true , true , file_data , color)
+        }
+
 
         function reply(msg , color){
             replyPreviewContainer.innerHTML = ''
@@ -312,13 +343,13 @@
             replyPreview.style.color = color
             replyPreviewContainer.appendChild(replyPreview)
             console.log('before sending to backend: ' , msg , color)
-            user.emit('update_reply_flag' , true , msg , color)
+            user.emit('update_reply_flag' , false , true , msg , color)
             scrollToBottomWindow()
         }
 
         function cancelReply(){
             replyPreviewContainer.innerHTML = ''
-            user.emit('update_reply_flag' , false , '' , '')
+            user.emit('update_reply_flag' , false , false , '' , '')
         }
 
 

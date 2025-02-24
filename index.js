@@ -51,7 +51,7 @@ io.on('connection' , user => {
         
         user.join(roomKey)
 
-        isReplying[roomKey][user.id] = [false , '' , '']
+        isReplying[roomKey][user.id] = [false , false , '' , '']
 
         let index = assignColors(roomColors[roomKey])
 
@@ -108,22 +108,24 @@ io.on('connection' , user => {
 
         user.on('send_message' , (msg) => {
             let userColor = rooms[roomKey][user.id]
-            let flag = isReplying[roomKey][user.id][0]
-            let rmsg = isReplying[roomKey][user.id][1]
-            let rcolor = isReplying[roomKey][user.id][2]
+            let file_flag = isReplying[roomKey][user.id][0]
+            let flag = isReplying[roomKey][user.id][1]
+            let rmsg = isReplying[roomKey][user.id][2]
+            let rcolor = isReplying[roomKey][user.id][3]
             console.log('Sender: ' , user.id)
             msg_index[roomKey]++
-            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] , flag , rmsg , rcolor)
+            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] ,file_flag, flag , rmsg , rcolor)
         })
 
         user.on('deleteMsg' , (msgToDel) => {
             io.to(roomKey).emit('delfromChatBox' , msgToDel)
         })
 
-        user.on('update_reply_flag' , (flag , rmsg , rcolor) => {
-            isReplying[roomKey][user.id][0] = flag
-            isReplying[roomKey][user.id][1] = rmsg
-            isReplying[roomKey][user.id][2] = rcolor
+        user.on('update_reply_flag' , (file_flag , flag , rmsg , rcolor) => {
+            isReplying[roomKey][user.id][0] = file_flag
+            isReplying[roomKey][user.id][1] = flag
+            isReplying[roomKey][user.id][2] = rmsg
+            isReplying[roomKey][user.id][3] = rcolor
             console.log(isReplying[roomKey])
         })
 

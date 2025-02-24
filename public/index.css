@@ -89,9 +89,20 @@ input {
 
 #imageContainer img{
     position: relative;
-    width: 75px;
-    height: 75px;
+    width: auto;
+    height: auto;
     border-radius: 10px;
+    max-width: 100px;
+    max-height: 100px;
+}
+
+.previewImgContainer{
+    position: relative;
+    width: auto;
+    height: auto;
+    border-radius: 10px;
+    max-width: 100px;
+    max-height: 100px;
 }
 
 #imageContainer #cancelImgBtn{
@@ -116,9 +127,11 @@ input {
     align-items: center;
 }
 
-.chat-img{
-    width: 120px;
-    height: 120px;
+.chat-img , .replyImg{
+    max-width: 140px;
+    max-height: 140px;
+    width: auto;
+    height: auto;
     border-radius: 10px;
     transition: transform 0.3s ease;
 }
