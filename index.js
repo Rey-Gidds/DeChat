@@ -21,11 +21,13 @@ const isReplying = {}
 
 app.use(express.static(path.resolve('./public')))
 
+// To increase the size to transfer files , easily
+app.use(express.json({limit: '50mb'})) 
+app.use(express.urlencoded({limit: '50mb' , extended: true}))
+
 app.get('/', (req, res) => {
   return res.sendFile('/public/index.html');
 });
-
-
 
 function assignColors(colors){
     return Math.floor(Math.random()*colors.length)

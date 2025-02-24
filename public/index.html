@@ -126,7 +126,7 @@
         message.addEventListener('blur' , () => {
             typingTimeout = setTimeout(() => {
                 user.emit('stoppedTyping')
-            } , 300)
+            } , 100)
         })
 
 
