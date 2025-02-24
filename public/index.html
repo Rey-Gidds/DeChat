@@ -118,9 +118,9 @@
         
         let typingTimeout;
         message.addEventListener('focus' , () => {
-            scrollToBottomWindow()
             clearTimeout(typingTimeout)
             user.emit('typing')
+            scrollToBottomWindow()
         })
 
         message.addEventListener('blur' , () => {
@@ -201,7 +201,7 @@
 
             scrollTimeout = setTimeout(() => {
                 isScrolling = false
-            } , 2000)
+            } , 800)
         })
 
 
@@ -332,6 +332,7 @@
             replyPreview.style.borderRadius = '10px'
             replyPreviewContainer.appendChild(replyPreview)
             user.emit('update_reply_flag' , true , true , file_data , color)
+            scrollToBottomWindow()
         }
 
 
