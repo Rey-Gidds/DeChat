@@ -26,7 +26,7 @@
 
     <div class="sendArea">
         <textarea id="message" placeholder="Type freely..." rows="1"/></textarea>
-        <input type="file" id="fileInput" style="display: none;">
+        <input type="file" id="fileInput" style="display: none;" accept="image/*">
         
         <div class="sendAreaBtns">
 
@@ -105,7 +105,7 @@
                 cancelImg()
                 return
             }
-            if(file){
+            if(file && file.type.startsWith("image/")){
                 let reader = new FileReader()
                 reader.readAsDataURL(file)
                 reader.onload = () => {
@@ -117,6 +117,10 @@
                     scrollToBottomWindow()
 
                 }
+            }
+            else{
+                replyPreviewContainer.innerHTML = `We only support IMAGES for now. <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
+                cancelImg()
             }
         })
 
