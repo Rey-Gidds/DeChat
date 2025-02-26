@@ -18,6 +18,7 @@
     
     <div id="displayRoomKey"></div>
     <div id="memberColorBalls"></div>
+    
     <div id="chatBox"></div>
 
     <div id="replyPreviewContainer"></div>
@@ -32,9 +33,9 @@
         <a name="bottom"></a>
     </div>
 
-    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const user = io('https://dechat-o5h4.onrender.com')
+        const user = io()
         const sendbtn = document.getElementById('sendbtn')
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
@@ -76,15 +77,13 @@
             user.emit('joinRoom' , key )
             isJoined = true
             displayRoomKey.innerText = `Joined Room: ${key}`
+            scrollToBottomWindow()
             roomKey.value = key
         })
 
 
         joinBtn.addEventListener('click' , (e) => {
-            if(isJoined){
-                console.log('Is Joined')
-                return
-            }
+            if(isJoined || roomKey.value < 11) return
             else if(roomKey.value === '') return
             else if(displayRoomKey.innerText === '') displayRoomKey.innerText = `Joined Room: ${roomKey.value}`
             user.emit('joinRoom' , roomKey.value )

@@ -137,8 +137,6 @@ io.on('connection' , user => {
 
             console.log('User Disconnected.')
 
-            user.emit('disconnected')
-
             let userColor = rooms[roomKey][user.id]
 
             io.to(roomKey).emit('userDisconnected')
