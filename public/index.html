@@ -12,7 +12,7 @@
     <a href="about.html">New to <b>DeChat</b>? , Click here !</a>
     <button id="createKey">Create Key</button>
     <div class="joinArea">
-        <input type="text" id="roomKey" placeholder="Enter Room Key"><button id="joinRoom">Join</button>
+        <input type="text" id="roomKey" placeholder="Enter Room Key"><a href="#bottom"><button id="joinRoom">Join</button></a>
     </div>
 
     
@@ -29,6 +29,7 @@
         
         <button id="fileBtn" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-paperclip"></i></button>
         <button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button>
+        <a name="bottom"></a>
     </div>
 
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
@@ -126,7 +127,7 @@
         message.addEventListener('blur' , () => {
             typingTimeout = setTimeout(() => {
                 user.emit('stoppedTyping')
-            } , 100)
+            } , 200)
         })
 
 
@@ -211,60 +212,7 @@
             msgContainer.className = 'msgBubble';
             msgContainer.style.color = userColor;
             msgContainer.setAttribute('id', msg_index);
-
-            if (replying_flag && !file_flag) {
-                let replyMsg = document.createElement('div');
-                replyMsg.className = 'replyMsg';
-                replyMsg.style.color = rcolor;
-                replyMsg.innerHTML = `
-                    <span class="replyText">${rmsg}</span>
-                    <button class='replyBtn' onclick='reply("${rmsg}" , "${rcolor}")'>
-                        <i class="fa-solid fa-reply"></i>
-                    </button>
-                `;
-                msgContainer.appendChild(replyMsg); // Add reply message inside the same bubble
-            }
-            else if(file_flag){
-                let replyMsg = document.createElement('div');
-                replyMsg.className = 'replyMsg';
-                replyMsg.style.border = `2px dashed ${rcolor}`;
-                replyMsg.innerHTML = `
-                    <img src=${rmsg} class='replyImg' />
-                    <button class='replyBtn' onclick='replyFile("${rmsg}" , "${rcolor}")'>
-                        <i class="fa-solid fa-reply"></i>
-                    </button>
-                `;
-                msgContainer.appendChild(replyMsg);
-            }
-
-            let newMsg = document.createElement('p');
-            newMsg.className = 'messageContent';
-            newMsg.innerHTML = `<div>${msg}</div>`;
-
-            if (sender == user_id) {
-                msgContainer.style.borderRadius = '20px 20px 2px 20px'
-                newMsg.innerHTML += `
-                    <div class='msgBtnContainer'>
-                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}")'>
-                            <i class="fa-solid fa-pencil"></i>
-                        </button>
-                        <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
-                            <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
-                `;
-                cancelReply();
-            } else {
-                msgContainer.style.borderRadius = '20px 20px 20px 2px'
-                newMsg.innerHTML += `
-                    <button class='replyBtn' onclick='reply("${msg}", "${userColor}")'>
-                        <i class="fa-solid fa-reply"></i>
-                    </button>
-                `;
-                receiveSound.play();
-            }
-
-            msgContainer.appendChild(newMsg); // Add actual message to the bubble
+            render_msg({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor,msgContainer)
 
             chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
 
@@ -354,43 +302,78 @@
         }
 
 
-        user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit) => {
+        user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor) => {
             
             let editedMsgContainer = document.getElementById(msg_index_for_edit)
-
             editedMsgContainer.innerHTML = ''
 
-            editedMsgContainer.style.color = userColor
-            let editedMsg = document.createElement('p')
-            editedMsg.className = 'messageContent'
+            render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer)
+            
+            isEdit = false
+        })
 
-            editedMsg.innerHTML = `<div>${msg}</div>`;
+        function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer){
+
+            if(flag_file){
+                let replyMsg = document.createElement('div');
+                replyMsg.className = 'replyMsg';
+                replyMsg.style.border = `2px dashed ${rcolor}`;
+                replyMsg.innerHTML = `
+                    <img src=${rmsg} class='replyImg' />
+                    <button class='replyBtn' onclick='replyFile("${rmsg}" , "${rcolor}")'>
+                        <i class="fa-solid fa-reply"></i>
+                    </button>
+                `;
+                msgContainer.appendChild(replyMsg)
+            }
+            else if(flag_reply){
+                let replyMsg = document.createElement('div');
+                replyMsg.className = 'replyMsg';
+                replyMsg.style.color = rcolor;
+                replyMsg.innerHTML = `
+                    <span class="replyText">${rmsg}</span>
+                    <button class='replyBtn' onclick='reply("${rmsg}" , "${rcolor}")'>
+                        <i class="fa-solid fa-reply"></i>
+                    </button>
+                `;
+                msgContainer.appendChild(replyMsg)
+                cancelReply()
+                replyPreviewContainer.innerHTML = ''
+            }
+
+            msgContainer.style.color = userColor
+            let new_msg = document.createElement('p')
+            new_msg.className = 'messageContent'
+
+            new_msg.innerHTML = `<div>${msg}</div>`;
             if (sender == user_id) {
-                editedMsg.innerHTML += `
+                msgContainer.style.borderRadius = '20px 20px 2px 20px'
+                new_msg.innerHTML += `
                     <div class='msgBtnContainer'>
-                        <button class='EditBtn' data-value='${msg_index_for_edit}' onclick='editMsg(${msg_index_for_edit}, "${msg}")'>
+                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}")'>
                             <i class="fa-solid fa-pencil"></i>
                         </button>
-                        <button class='DelBtns' data-value='${msg_index_for_edit}' onclick='removeMsg(${msg_index_for_edit})'>
+                        <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </div>
                 `;
             } else {
-                editedMsg.innerHTML += `
+                msgContainer.style.borderRadius = '20px 20px 20px 2px'
+                new_msg.innerHTML += `
                     <button class='replyBtn' onclick='reply("${msg}" , "${userColor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
                 receiveSound.play();
             }
-            editedMsgContainer.appendChild(editedMsg)
-            isEdit = false
-        })
+            msgContainer.appendChild(new_msg)
+            return
+        }
 
         function editMsg(edit_index , msg){
-            message.value = msg
             isEdit = true
+            message.value = msg
             msg_to_edit_index = edit_index
         }
 

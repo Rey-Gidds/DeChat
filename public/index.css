@@ -308,11 +308,12 @@ input {
 
     #chatBox {
         width: 97%;
-        height: 300px;
+        height: 370px;
         overflow-y: auto;
     }
 
     .sendArea {
+        margin-top: -20px;
         width: 98%;
         padding: 10px;
     }

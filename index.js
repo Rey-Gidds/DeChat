@@ -81,7 +81,11 @@ io.on('connection' , user => {
 
         user.on('editMsg' , (msg_index_for_edit , msg) => {
             let userColor = rooms[roomKey][user.id]
-            io.to(roomKey).emit('msgEdited' , { msg , userColor } , user.id , msg_index_for_edit)
+            let replying_flag_file = isReplying[roomKey][user.id][0]
+            let replying_flag = isReplying[roomKey][user.id][1]
+            let rmsg = isReplying[roomKey][user.id][2]
+            let rcolor = isReplying[roomKey][user.id][3]
+            io.to(roomKey).emit('msgEdited' , { msg , userColor } , user.id , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor)
         })
 
         user.on('sendFile' , (file_data , file_type) => {
