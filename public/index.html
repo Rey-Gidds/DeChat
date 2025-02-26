@@ -120,7 +120,6 @@
         message.addEventListener('focus' , () => {
             clearTimeout(typingTimeout)
             user.emit('typing')
-            scrollToBottomWindow()
         })
 
         message.addEventListener('blur' , () => {
