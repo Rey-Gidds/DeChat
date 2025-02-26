@@ -229,6 +229,10 @@ input {
     box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2);
 }
 
+#cancelImgBtn{
+    transform: translate(-10px  , -15px);
+}
+
 .DelBtns:hover , .EditBtn:hover , .cancelReplyBtn:hover , .replyBtn:hover{
     background-color: grey; 
     transform: scale(1.1);
@@ -249,6 +253,11 @@ input {
     background-color: #444;
     border-radius: 10px;
 }
+
+#memberColorBalls{
+    margin-bottom: -5px;
+}
+
 #typingBalls{
     border-radius: 100%;
     justify-self: flex-end;

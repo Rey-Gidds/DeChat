@@ -102,22 +102,25 @@
                 let reader = new FileReader()
                 reader.readAsDataURL(file)
                 reader.onload = () => {
+
                     imageContainer.innerHTML = `<img src='${reader.result}' />
                     <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
                     fileData = reader.result
                     fileType = file.type
                     scrollToBottomWindow()
+
                 }
             }
         })
 
         function scrollToBottomWindow(){
-            window.scrollTo({top: document.body.scrollHeight , behavior: "smooth"})
+            window.scrollTo({top: document.body.scrollHeight + 200 , behavior: "smooth"})
         }
 
         function cancelImg(){
             isFile = false
             imageContainer.innerHTML = ''
+            fileInput.value = ''
         }
 
         
