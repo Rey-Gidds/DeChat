@@ -98,6 +98,13 @@
         fileInput.addEventListener('change' , () => {
             isFile = true
             let file = fileInput.files[0]
+            let fileSize = (file.size/1024)
+            if(fileSize > 350){
+                replyPreviewContainer.innerHTML = `Too large file ! ,<br>
+                currently we only support file upto 350 KB. <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
+                cancelImg()
+                return
+            }
             if(file){
                 let reader = new FileReader()
                 reader.readAsDataURL(file)
