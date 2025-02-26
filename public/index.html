@@ -45,9 +45,8 @@
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
         const keyBtn = document.getElementById('createKey')
-        const sendSound = new Audio('send.wav')
         const receiveSound = new Audio('receive.wav')
-        const joinSound = new Audio('newJoin1.wav')
+        const leaveSound = new Audio('newJoin1.wav')
         const delSound = new Audio('Remove_Msg.flac')
         const fileInput = document.getElementById('fileInput')
         let chatBox = document.getElementById('chatBox')
@@ -193,7 +192,6 @@
                 user.emit('sendFile' , fileData , fileType)
                 console.log('sending the file... ' , fileData ,fileType)
                 cancelImg()
-                sendSound.play()
                 return
             }
             else if(message.value === ''){
@@ -202,13 +200,11 @@
             else if(isEdit){
                 user.emit('editMsg' , msg_to_edit_index , message.value)
                 message.value = ''
-                sendSound.play()
                 return
             }
             user.emit('send_message' , message.value)
             message.value = ''
             console.log(message.value)
-            sendSound.play()
         })
 
         let scrollTimeout;
@@ -326,7 +322,7 @@
 
             render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer)
             
-            isEdit = false
+            cancelEdit()
         })
 
         function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer){
@@ -341,7 +337,7 @@
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
-                cancelImg()
+                cancelReply()
                 msgContainer.appendChild(replyMsg)
             }
             else if(flag_reply){
@@ -368,7 +364,7 @@
                 msgContainer.style.borderRadius = '20px 20px 2px 20px'
                 new_msg.innerHTML += `
                     <div class='msgBtnContainer'>
-                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}")'>
+                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}" , "${userColor}")'>
                             <i class="fa-solid fa-pencil"></i>
                         </button>
                         <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
@@ -389,10 +385,24 @@
             return
         }
 
-        function editMsg(edit_index , msg){
+        function editMsg(edit_index , msg , color){
             isEdit = true
+            replyPreviewContainer.innerHTML = ''
+            let editPreview = document.createElement('div')
+            editPreview.className = 'replyPreview'
+            editPreview.innerHTML = `Editing: ${msg} <button class='cancelReplyBtn' onclick=cancelEdit()><i class="fa-solid fa-xmark"></i></button>`
+            editPreview.style.color = color
+            replyPreviewContainer.appendChild(editPreview)
+            scrollToBottomWindow()
             message.value = msg
             msg_to_edit_index = edit_index
+        }
+
+        function cancelEdit(){
+            isEdit = false
+            replyPreviewContainer.innerHTML = ''
+            message.value = ''
+            msg_to_edit_index = null
         }
 
 
@@ -411,7 +421,7 @@
         })
 
         user.on('userDisconnected' , () => {
-            joinSound.play()
+            leaveSound.play()
         })
 
         user.on('addMemberBall' , (assignedColorsList) => {
