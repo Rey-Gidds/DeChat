@@ -28,9 +28,14 @@
         <textarea id="message" placeholder="Type freely..." rows="1"/></textarea>
         <input type="file" id="fileInput" style="display: none;">
         
-        <button id="fileBtn" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-paperclip"></i></button>
-        <button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button>
-        <a name="bottom"></a>
+        <div class="sendAreaBtns">
+
+            <button id='sendbtn'><i class="fa-solid fa-paper-plane"></i></button>
+            <button id="fileBtn" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-paperclip"></i></button>
+            
+            <a name="bottom"></a>
+        </div>
+        
     </div>
 
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
