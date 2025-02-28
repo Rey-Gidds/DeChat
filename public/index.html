@@ -4,19 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DeChat</title>
+    <!-- SVG icons js link -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- stylesheet link/ -->
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
     <a href="about.html"><div class="heading">DeChat</div></a>
+    
     <a href="about.html">New to <b>DeChat</b>? , Click here !</a>
+    
     <button id="createKey">Create Key</button>
     <div class="joinArea">
         <input type="text" id="roomKey" placeholder="Enter Room Key"><a href="#bottom"><button id="joinRoom">Join</button></a>
     </div>
 
-    
     <div id="displayRoomKey"></div>
+
     <div id="memberColorBalls"></div>
     
     <div id="chatBox"></div>
@@ -25,6 +29,7 @@
     <div id="imageContainer"></div>
 
     <div class="sendArea">
+
         <textarea id="message" placeholder="Type freely..." rows="1"/></textarea>
         <input type="file" id="fileInput" style="display: none;" accept="image/*">
         
@@ -34,8 +39,7 @@
             <button id="fileBtn" onclick="document.getElementById('fileInput').click()"><i class="fa-solid fa-paperclip"></i></button>
             
             <a name="bottom"></a>
-        </div>
-        
+        </div>        
     </div>
 
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
@@ -55,6 +59,18 @@
         let imageContainer = document.getElementById('imageContainer')
         let memberColorBalls = document.getElementById('memberColorBalls')
         let displayRoomKey = document.getElementById('displayRoomKey')
+        
+        // Varibles to store critical information at the frontend 
+        /*  Note:
+                Any variable changed from this below section may break the code , 
+                as it contains necessary booleans and certain information user specific that is 
+                stored at the frontend , Hence , handle the below variables with care ;) ,this information includes :
+                1. The key of the room
+                2. HASHED user id provided by the socket.io framework , which is stored at the frontend for
+                    for some features
+                3. file data being sent 
+                4. type of the file being sent
+         */
         let key = ''
         let user_id = ''
         let fileData = ''
@@ -64,10 +80,13 @@
         let isScrolling = false
         let isFile = false
         let msg_to_edit_index = null
-        
+
+
+        // To ensure empty values when user first loads the web for the first time
         message.value = ''
         roomKey.value = ''
 
+        // Function to generate the random key , 11 characters in length
         keyBtn.addEventListener('click' , (e) => {
             key = ''
             if(isJoined) return
@@ -85,7 +104,7 @@
             roomKey.value = key
         })
 
-
+        
         joinBtn.addEventListener('click' , (e) => {
             if(isJoined || roomKey.value < 11) return
             else if(roomKey.value === '') return
@@ -252,14 +271,14 @@
 
             if(sender == user_id){
                 msgContainer.style.borderRadius = '20px 20px 2px 20px'
-                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />
+                newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
                 <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
                     <i class="fa-solid fa-trash"></i>
                 </button>`
             }
             else{
                 msgContainer.style.borderRadius = '20px 20px 20px 2px'
-                newMsg.innerHTML = `<img src=${file_data} class='chat-img' />
+                newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
                 <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
                     <i class="fa-solid fa-reply"></i>
                 </button>`
@@ -274,6 +293,36 @@
             scrollToBottomChatBox()
         })
         
+        let imageWindow;
+        function openImageWindow(data){
+            imageWindow = window.open("" , "Image Window" , "_blank")
+            imageWindow.document.write(`
+            <html>
+                <head>
+                    <title>Image Viewer</title>
+                    <style>
+                        body{
+                            background-color: #444;
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                        }
+                        .fullViewImage{
+                            height: auto;
+                            width: auto;
+                            max-height: 80vh;
+                            max-width: 80vw;
+                            margin: auto;
+                            border-radius: 10px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <img src=${data} class='fullViewImage' />
+                </body>
+            </html>
+            `)
+        }
 
         function scrollToBottomChatBox(){
             chatBox.scrollTo({top: chatBox.scrollHeight , behavior: "smooth"})
@@ -332,7 +381,7 @@
                 replyMsg.className = 'replyMsg';
                 replyMsg.style.border = `2px dashed ${rcolor}`;
                 replyMsg.innerHTML = `
-                    <img src=${rmsg} class='replyImg' />
+                    <img src=${rmsg} class='replyImg' onclick=openImageWindow("${file_data}")/>
                     <button class='replyBtn' onclick='replyFile("${rmsg}" , "${rcolor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>

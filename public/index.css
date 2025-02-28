@@ -142,8 +142,9 @@ input {
 }
 
 .chat-img:active{
-    transform: scale(1.50);
+    transform: scale(1.15);
 }
+
 .replyMsg{
     display: flex;
     width: 97%;

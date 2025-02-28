@@ -32,10 +32,21 @@
                 reader.readAsDataURL(file)
                 reader.onload = () => {
                     let imageContainer = document.getElementById('imageContainer')
-                    imageContainer.innerHTML = `<img src='${reader.result}' />`
+                    imageContainer.innerHTML = `<img src='${reader.result}' onclick=openImageWindow("${reader.result}") />`
                 }
             }
         })
+        function openImageWindow(file_data){
+            let imageWindow = window.open("" , "_blank" , "width: 200px , height: 200px")
+            imageWindow.document.write( `
+            <html>
+                <head></head>
+                <body>
+                    <img src=${file_data} />
+                </body>
+            </html>
+            `)
+        }
     </script>
 </body>
 </html>
