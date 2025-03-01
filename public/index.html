@@ -30,7 +30,7 @@
 
     <div class="sendArea">
 
-        <textarea id="message" placeholder="Type freely..." rows="1"/></textarea>
+        <textarea id="message" placeholder="Type freely..." /></textarea>
         <input type="file" id="fileInput" style="display: none;" accept="image/*">
         
         <div class="sendAreaBtns">
@@ -70,7 +70,7 @@
                     for some features
                 3. file data being sent 
                 4. type of the file being sent
-         */
+        */
         let key = ''
         let user_id = ''
         let fileData = ''
@@ -223,8 +223,21 @@
             }
             user.emit('send_message' , message.value)
             message.value = ''
-            console.log(message.value)
         })
+
+
+        function stringify_message(value){
+
+        /* 
+            dummy value is taken to "not" directly stringify the original message value as the original value is
+            passed to the backend and also to render msgs which should not be "stringified"
+            hence the dummy value helps in passing the string as an argument in some functions in the program
+            which include: reply() , editMsg() in which the msg with new lines cannot be passed directly as 
+            an argument 
+        */
+            let dummy_value = value
+            return JSON.stringify(dummy_value)
+        }
 
         let scrollTimeout;
         chatBox.addEventListener('scroll' , () => {
@@ -354,6 +367,9 @@
             replyPreviewContainer.innerHTML = ''
             let replyPreview = document.createElement('div')
             replyPreview.className = 'replyPreview'
+
+            // innerHTML always ignores the \n characters , that is why the JSON stringified string passed as the
+            //  string argument has \n characters , but the innerHTML "IGNORES" it
             replyPreview.innerHTML = `Replying to: ${msg} <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
             replyPreview.style.color = color
             replyPreviewContainer.appendChild(replyPreview)
@@ -399,7 +415,7 @@
                 replyMsg.style.color = rcolor;
                 replyMsg.innerHTML = `
                     <span class="replyText">${rmsg}</span>
-                    <button class='replyBtn' onclick='reply("${rmsg}" , "${rcolor}")'>
+                    <button class='replyBtn' onclick='reply(${stringify_message(rmsg)} , "${rcolor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
@@ -417,7 +433,7 @@
                 msgContainer.style.borderRadius = '20px 20px 2px 20px'
                 new_msg.innerHTML += `
                     <div class='msgBtnContainer'>
-                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, "${msg}" , "${userColor}")'>
+                        <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, ${stringify_message(msg)} , "${userColor}")'>
                             <i class="fa-solid fa-pencil"></i>
                         </button>
                         <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
@@ -428,7 +444,7 @@
             } else {
                 msgContainer.style.borderRadius = '20px 20px 20px 2px'
                 new_msg.innerHTML += `
-                    <button class='replyBtn' onclick='reply("${msg}" , "${userColor}")'>
+                    <button class='replyBtn' onclick='reply(${stringify_message(msg)} , "${userColor}")'>
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
@@ -443,6 +459,9 @@
             replyPreviewContainer.innerHTML = ''
             let editPreview = document.createElement('div')
             editPreview.className = 'replyPreview'
+
+            // innerHTML always ignores the \n characters , that is why the JSON stringified string passed as the
+            //  string argument has \n characters , but the innerHTML "IGNORES" it
             editPreview.innerHTML = `Editing: ${msg} <button class='cancelReplyBtn' onclick=cancelEdit()><i class="fa-solid fa-xmark"></i></button>`
             editPreview.style.color = color
             replyPreviewContainer.appendChild(editPreview)

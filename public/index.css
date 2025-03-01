@@ -183,8 +183,11 @@ input {
 
 #replyPreviewContainer{
     display: flex;
+    overflow-y: auto;
+    max-height: 100px;
     justify-content: center;
     width: 90%;
+    border-radius: 10px;
     max-width: 650px;
 }
 
@@ -195,14 +198,14 @@ input {
     justify-content: space-between;
     align-items: center;
     background-color: #444;
-    width: 97%;
+    width: 100%;
     max-width: 650px;
     padding-left: 10px;
     word-wrap: break-word;
     overflow-wrap: break-word;
     white-space: pre-wrap;
     word-break: break-all;
-    border-radius: 10px 10px 10px 10px;
+    border-radius: 10px;
     margin-bottom: 4px;
 }
 
