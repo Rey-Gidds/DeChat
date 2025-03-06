@@ -277,8 +277,21 @@ input {
 
 .typingBall{
     padding: 3px;
+    animation: heartbeat 1s infinite ease-in-out;
 }
 
+
+@keyframes heartbeat{
+    0%{
+        transform: scale(0.2);
+    }
+    50%{
+        transform: scale(1);
+    }
+    100%{
+        transform: scale(0.2);
+    }
+}
 /* Input Areas */
 .joinArea {
     display: flex;
@@ -322,6 +335,11 @@ input {
 .sendAreaBtns{
     width: 60px;
     margin-left: 5px;
+}
+
+#sending-indicator{
+    margin: 10px;
+    animation: heartbeat 1s infinite ease-in-out;
 }
 
 /* Mobile Responsiveness */

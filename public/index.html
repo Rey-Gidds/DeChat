@@ -28,6 +28,7 @@
     <div id="replyPreviewContainer"></div>
     <div id="imageContainer"></div>
 
+    <div id="sending-indicator"></div>
     <div class="sendArea">
 
         <textarea id="message" placeholder="Type freely..." /></textarea>
@@ -53,6 +54,7 @@
         const leaveSound = new Audio('newJoin1.wav')
         const delSound = new Audio('Remove_Msg.flac')
         const fileInput = document.getElementById('fileInput')
+        let sending_indicator = document.getElementById('sending-indicator')
         let chatBox = document.getElementById('chatBox')
         let replyPreviewContainer = document.getElementById('replyPreviewContainer')
         let message = document.getElementById('message')
@@ -219,6 +221,7 @@
         sendbtn.addEventListener('click' , (e) => {
             if(isFile){
                 user.emit('sendFile' , fileData , fileType)
+                sending_indicator.innerHTML = 'sending...'
                 console.log('sending the file... ' , fileData ,fileType)
                 cancelImg()
                 return
@@ -282,6 +285,7 @@
         });
 
         user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
+            sending_indicator.innerHTML = ''
             let typingBubble = document.getElementById('typingBalls')
             let msgContainer = document.createElement('div') // Main container
             msgContainer.className = 'msgBubble'
