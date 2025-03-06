@@ -184,7 +184,7 @@ input {
 #replyPreviewContainer{
     display: flex;
     overflow-y: auto;
-    max-height: 100px;
+    max-height: 150px;
     justify-content: center;
     width: 90%;
     border-radius: 10px;
@@ -283,13 +283,13 @@ input {
 
 @keyframes heartbeat{
     0%{
-        transform: scale(0.2);
+        transform: scale(0.5);
     }
     50%{
         transform: scale(1);
     }
     100%{
-        transform: scale(0.2);
+        transform: scale(0.5);
     }
 }
 /* Input Areas */
@@ -338,7 +338,7 @@ input {
 }
 
 #sending-indicator{
-    margin: 10px;
+    margin: 5px;
     animation: heartbeat 1s infinite ease-in-out;
 }
 

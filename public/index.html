@@ -221,7 +221,7 @@
         sendbtn.addEventListener('click' , (e) => {
             if(isFile){
                 user.emit('sendFile' , fileData , fileType)
-                sending_indicator.innerHTML = 'sending...'
+                sending_indicator.innerHTML = 'sending image...'
                 console.log('sending the file... ' , fileData ,fileType)
                 cancelImg()
                 return
