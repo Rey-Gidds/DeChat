@@ -184,7 +184,7 @@ input {
 #replyPreviewContainer{
     display: flex;
     overflow-y: auto;
-    max-height: 150px;
+    max-height: 170px;
     justify-content: center;
     width: 90%;
     border-radius: 10px;
