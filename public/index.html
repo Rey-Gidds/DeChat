@@ -219,9 +219,13 @@
         
 
         sendbtn.addEventListener('click' , (e) => {
+            if(!isJoined){
+                alert("Seems like you're not joined in any room :(")
+                return
+            }
             if(isFile){
                 user.emit('sendFile' , fileData , fileType)
-                sending_indicator.innerHTML = 'sending image...'
+                sending_indicator.innerHTML = '<div class="sending-bar"></div>'
                 console.log('sending the file... ' , fileData ,fileType)
                 cancelImg()
                 return

@@ -339,7 +339,34 @@ input {
 
 #sending-indicator{
     margin: 5px;
-    animation: heartbeat 1s infinite ease-in-out;
+    width: 200px;
+    display: flex;
+    justify-content: center;
+}
+.sending-bar{
+    padding: 5px;
+    border-radius: 20px;
+    background-color: white;
+    animation: back-and-forth 1s infinite ease;
+    width: 50%;
+}
+
+@keyframes back-and-forth{
+    0%{
+        transform: translateX(0);
+    }
+    25%{
+        transform: translateX(50%);
+    }
+    50%{
+        transform: translateX(0);
+    }
+    75%{
+        transform: translateX(-50%);
+    }
+    100%{
+        transform: translateX(0);
+    }
 }
 
 /* Mobile Responsiveness */
