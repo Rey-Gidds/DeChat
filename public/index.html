@@ -56,6 +56,7 @@
         const fileInput = document.getElementById('fileInput')
         let sending_indicator = document.getElementById('sending-indicator')
         let chatBox = document.getElementById('chatBox')
+        let notificationBtn = document.getElementById('notify')
         let replyPreviewContainer = document.getElementById('replyPreviewContainer')
         let message = document.getElementById('message')
         let imageContainer = document.getElementById('imageContainer')
@@ -73,6 +74,7 @@
                 3. file data being sent 
                 4. type of the file being sent
         */
+        let notification;
         let key = ''
         let user_id = ''
         let fileData = ''
@@ -80,9 +82,28 @@
         let isEdit = false
         let isJoined = false
         let isScrolling = false
+        let notify = false
         let isFile = false
         let msg_to_edit_index = null
+        let count = 0
+        console.log(count)
 
+
+        Notification.requestPermission()
+        
+        
+        document.addEventListener('visibilitychange' , () => {
+            if(document.visibilityState === "hidden"){
+                notify = true
+                notification = new Notification("Trying to hide the chats huh ? 🥷" , { silent: true })
+            } else {
+                count = 0
+                notify = false
+                notification.close()
+            }
+        })
+
+        console.log(new Date())
 
         // To ensure empty values when user first loads the web for the first time
         message.value = ''
@@ -313,6 +334,7 @@
                 <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
                     <i class="fa-solid fa-reply"></i>
                 </button>`
+                messageNotification()
                 receiveSound.play()
             }
 
@@ -412,6 +434,15 @@
             cancelEdit()
         })
 
+        function messageNotification(){
+            if(!notify) return
+            count++
+            new Notification(`${count} new message` , {
+                tag: 'message_notification',
+                vibrate: [100 , 100]
+            })
+        }
+
         function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer){
 
             if(flag_file){
@@ -466,6 +497,7 @@
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
+                messageNotification()
                 receiveSound.play();
             }
             msgContainer.appendChild(new_msg)
