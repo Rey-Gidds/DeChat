@@ -20,9 +20,6 @@ const isBubble = {}
 const isReplying = {}
 const room_titles = {}
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-
 
 // To increase the size to transfer files , easily
 app.use(express.json({limit: '50mb'})) 
@@ -35,6 +32,8 @@ app.get('/', (req, res) => {
 app.get('/index.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 
 
