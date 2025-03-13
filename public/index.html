@@ -46,9 +46,9 @@
         </div>        
     </div>
 
-    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const user = io('https://dechat-o5h4.onrender.com')
+        const user = io()
         const sendbtn = document.getElementById('sendbtn')
         const room_title = document.getElementById('room_title')
         const keyBtn = document.getElementById('createKey')
@@ -99,7 +99,6 @@
             console.log(key)
             createArea.style.display = "none"
             if(key) {
-                user.emit("getUserId")
                 joinRoom()
             }
         }
@@ -109,6 +108,7 @@
             if(user_id == ''){
                 user_id = userId
             }
+            console.log('User ID: ' , user_id)
         })
 
 

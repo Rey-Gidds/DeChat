@@ -43,6 +43,7 @@ function assignColors(colors){
 
 io.on('connection' , user => {
     io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles)
+    
     user.on('joinRoom' , (roomKey , room_title) => {
         if(!rooms[roomKey]){
             rooms[roomKey] = {}
@@ -61,13 +62,12 @@ io.on('connection' , user => {
         
         user.join(roomKey)
 
+        io.emit('TakeUserId' , user.id)
+
         isReplying[roomKey][user.id] = [false , false , '' , '']
 
         let index = assignColors(roomColors[roomKey])
 
-        user.on("getUserId" , () => {
-            io.to(user.id).emit('TakeUserId' , user.id)
-        })
 
         rooms[roomKey][user.id] = roomColors[roomKey][index]
 
