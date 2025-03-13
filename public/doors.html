@@ -151,7 +151,7 @@
         }
         
         .door-icon {
-            width: 40px;
+            width: 30px;
             height: 40px;
             margin-right: 12px;
             fill: var(--accent-color);
@@ -183,7 +183,7 @@
 <body>
     <div class="header">
         <div class="logo-container">
-            <svg class="door-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <svg class="door-icon" xmlns="http://www.w3.org/2000/svg" viewBox="3 6 24 24">
                 <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h12v16z"/>
                 <circle cx="15" cy="12" r="1.5"/>
             </svg>
@@ -211,6 +211,11 @@
         user.on("displayAvailableRooms", (rooms , room_title) => {
             displayRooms(rooms , room_title);
         });
+
+        user.on('destroyRoomBlock' , (room_key) => {
+            let room = document.getElementById(room_key)
+            room.remove()
+        })
         
         function displayRooms(rooms , room_titles) {
             // Clear previous content

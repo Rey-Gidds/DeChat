@@ -171,6 +171,7 @@ io.on('connection' , user => {
                 delete msg_index[roomKey]
                 delete isReplying[roomKey]
                 delete room_titles[roomKey]
+                io.emit('destroyRoomBlock' , roomKey)
             }
         })
     })
