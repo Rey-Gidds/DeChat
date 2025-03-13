@@ -4,46 +4,252 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Doors</title>
-    
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --accent-color: #7289da;
+            --text-primary: #ffffff;
+            --text-secondary: #b9bbbe;
+            --success-color: #43b581;
+            --danger-color: #f04747;
+            --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 2rem;
+        }
+        
+        h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(90deg, var(--accent-color), #a3b8ff);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            letter-spacing: 1px;
+            text-align: center;
+        }
+        
+        #createRoom {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 2rem;
+            box-shadow: var(--card-shadow);
+        }
+        
+        #createRoom:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.4);
+            background-color: #8699e0;
+        }
+        
+        #active_rooms {
+            width: 100%;
+            max-width: 800px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+        
+        .room_block {
+            background-color: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease;
+            box-shadow: var(--card-shadow);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .room_block:hover {
+            transform: translateY(-5px);
+        }
+        
+        .roomTitle {
+            font-size: 1.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .members {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .members::before {
+            content: '';
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--success-color);
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .joinBtn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: auto;
+        }
+        
+        .joinBtn:hover {
+            background-color: #8699e0;
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            padding: 2rem;
+            background-color: var(--bg-secondary);
+            border-radius: 12px;
+            width: 100%;
+            border: 1px dashed rgba(255, 255, 255, 0.1);
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+        
+        .door-icon {
+            width: 40px;
+            height: 40px;
+            margin-right: 12px;
+            fill: var(--accent-color);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            #active_rooms {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 2.5rem;
+                text-align: center;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>Doors</h1>
-    <button id="createRoom">Create Room</button>
-    <div id="active_rooms"></div>
+    <div class="header">
+        <div class="logo-container">
+            <svg class="door-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h12v16z"/>
+                <circle cx="15" cy="12" r="1.5"/>
+            </svg>
+            <h1>Doors</h1>
+        </div>
+        <p class="tagline">Close it and never find it again !!</p>
+        <button id="createRoom">Create New Room</button>
+    </div>
+    
+    <div id="active_rooms" class="room-container">
+        <div class="empty-state">No active rooms. Create one to get started!</div>
+    </div>
+    
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        const user = io()
-        const createRoomBtn = document.getElementById("createRoom")
-        let active_rooms = document.getElementById("active_rooms")
-        if(active_rooms.innerHTML = ''){
-            active_rooms.innerText = "No active rooms."
-        }
-        createRoomBtn.addEventListener('click' , () => {
-            localStorage.setItem("isCreate" , JSON.stringify(true))
-            window.location.href = "index.html"
-        })
-
-        user.on("displayAvailableRooms" , (rooms) => {
-            displayRooms(rooms)
-        })
-        function displayRooms(rooms){
+        const user = io();
+        const createRoomBtn = document.getElementById("createRoom");
+        const active_rooms = document.getElementById("active_rooms");
+        
+        createRoomBtn.addEventListener('click', () => {
+            localStorage.setItem("isCreate", JSON.stringify(true));
+            window.location.href = "index.html";
+        });
+        
+        user.on("displayAvailableRooms", (rooms , room_title) => {
+            displayRooms(rooms , room_title);
+        });
+        
+        function displayRooms(rooms , room_titles) {
+            // Clear previous content
+            active_rooms.innerHTML = '';
+            
+            // Check if there are rooms to display
+            if (Object.keys(rooms).length === 0) {
+                const emptyState = document.createElement('div');
+                emptyState.className = 'empty-state';
+                emptyState.textContent = 'No active rooms. Create one to get started!';
+                active_rooms.appendChild(emptyState);
+                return;
+            }
+            
+            // Display rooms
             Object.keys(rooms).forEach((room) => {
-                let roomBlock = document.createElement('div')
-                let room_length = rooms[room].length
-                roomBlock.className = "room_block"
-                roomBlock.innerHTML = 
-                `
-                <h2 class="roomTitle">${room}</h2>
-                <div class="members">${room_length} / 8</div>
-                <button class="joinBtn" onclick=joinCall("${room}")>Join</button>
-                `
-                active_rooms.appendChild(roomBlock)
-            })
+                let roomBlock = document.createElement('div');
+                let room_length = rooms[room].length;
+                roomBlock.className = "room_block";
+                roomBlock.id = `${room}`;
+                
+                // Show capacity status color based on room fullness
+                let statusColor = room_length < 6 ? 'var(--success-color)' : 
+                                 room_length < 8 ? '#f0ad4e' : 'var(--danger-color)';
+                
+                roomBlock.innerHTML = `
+                    <h2 class="roomTitle">${room_titles[room]}</h2>
+                    <h3>${room}</h3>
+                    <div class="members" style="--status-color: ${statusColor}">${room_length} / 8</div>
+                    <button class="joinBtn" onclick='joinCall("${room}", false)'>Join Room</button>
+                `;
+                active_rooms.appendChild(roomBlock);
+            });
         }
-
-        function joinCall(roomKey){
-            localStorage.setItem("roomKey" , JSON.stringify(roomKey))
-            window.location.href="index.html"
+        
+        function joinCall(roomKey, isCreate) {
+            localStorage.setItem("isCreate", JSON.stringify(isCreate));
+            localStorage.setItem("roomKey", JSON.stringify(roomKey));
+            window.location.href = "index.html";
         }
     </script>
 </body>

@@ -15,9 +15,9 @@
     <a href="about.html">New to <b>DeChat</b>? , Click here !</a>
     
     <div id="createRoomArea">
-        <button id="createKey">Create Key</button>
         <div class="joinArea">
-            <input type="text" id="roomKey" placeholder="Enter Room Key"><a href="#bottom"><button id="joinRoom">Join</button></a>
+            <button id="createKey">Create Key</button>
+            <input type="text" id="room_title" placeholder="Enter Room title">
         </div>
     </div>
     
@@ -50,8 +50,7 @@
     <script>
         const user = io()
         const sendbtn = document.getElementById('sendbtn')
-        const roomKey = document.getElementById('roomKey')
-        const joinBtn = document.getElementById('joinRoom')
+        const room_title = document.getElementById('room_title')
         const keyBtn = document.getElementById('createKey')
         const receiveSound = new Audio('receive.wav')
         const leaveSound = new Audio('newJoin1.wav')
@@ -91,6 +90,7 @@
         let msg_to_edit_index = null
         let count = 0
 
+        console.log(isCreate)
 
         if(!isCreate){
             console.log("Joining Room")
@@ -126,15 +126,17 @@
             }
         })
 
-        console.log(new Date())
-
         // To ensure empty values when user first loads the web for the first time
         message.value = ''
 
         // Function to generate the random key , 11 characters in length
         keyBtn.addEventListener('click' , (e) => {
             key = ''
-            if(isJoined){
+            if(room_title.value === '' || room_title.value.length < 4){
+                alert("Room Title too short.")
+                return
+            }
+            else if(isJoined){
                 alert("Seems like you're already joined in a room , Refresh the page to join another room.")
                 return
             }
@@ -145,11 +147,10 @@
                 key += chars[index]
             }
             console.log(key)
-            user.emit('joinRoom' , key )
+            joinRoom()
             isJoined = true
             displayRoomKey.innerText = `Joined Room: ${key}`
             scrollToBottomWindow()
-            roomKey.value = key
         })
 
         
@@ -159,7 +160,7 @@
                 return
             }
             else if(displayRoomKey.innerText === '' && key) displayRoomKey.innerText = `Joined Room: ${key}`
-            user.emit('joinRoom' , key )
+            user.emit('joinRoom' , key , room_title.value)
             isJoined = true
         }
 
@@ -215,9 +216,6 @@
             } , 200)
         })
 
-
-
-        
 
         user.on('addtypingball' , (userColor , isBubble) => {
             if(!isBubble){
