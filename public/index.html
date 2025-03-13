@@ -14,10 +14,13 @@
     
     <a href="about.html">New to <b>DeChat</b>? , Click here !</a>
     
-    <button id="createKey">Create Key</button>
-    <div class="joinArea">
-        <input type="text" id="roomKey" placeholder="Enter Room Key"><a href="#bottom"><button id="joinRoom">Join</button></a>
+    <div id="createRoomArea">
+        <button id="createKey">Create Key</button>
+        <div class="joinArea">
+            <input type="text" id="roomKey" placeholder="Enter Room Key"><a href="#bottom"><button id="joinRoom">Join</button></a>
+        </div>
     </div>
+    
 
     <div id="displayRoomKey"></div>
 
@@ -43,9 +46,9 @@
         </div>        
     </div>
 
-    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        const user = io('https://dechat-o5h4.onrender.com')
+        const user = io()
         const sendbtn = document.getElementById('sendbtn')
         const roomKey = document.getElementById('roomKey')
         const joinBtn = document.getElementById('joinRoom')
@@ -62,7 +65,7 @@
         let imageContainer = document.getElementById('imageContainer')
         let memberColorBalls = document.getElementById('memberColorBalls')
         let displayRoomKey = document.getElementById('displayRoomKey')
-        
+
         // Varibles to store critical information at the frontend 
         /*  Note:
                 Any variable changed from this below section may break the code , 
@@ -84,9 +87,29 @@
         let isScrolling = false
         let notify = false
         let isFile = false
+        let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
         let msg_to_edit_index = null
         let count = 0
-        console.log(count)
+
+
+        if(!isCreate){
+            console.log("Joining Room")
+            let createArea = document.getElementById("createRoomArea")
+            key = JSON.parse(localStorage.getItem("roomKey")) || null
+            console.log(key)
+            createArea.style.display = "none"
+            if(key) {
+                user.emit("getUserId")
+                joinRoom()
+            }
+        }
+
+
+        user.on('TakeUserId' , (userId) => {
+            if(user_id == ''){
+                user_id = userId
+            }
+        })
 
 
         Notification.requestPermission()
@@ -107,7 +130,6 @@
 
         // To ensure empty values when user first loads the web for the first time
         message.value = ''
-        roomKey.value = ''
 
         // Function to generate the random key , 11 characters in length
         keyBtn.addEventListener('click' , (e) => {
@@ -131,20 +153,15 @@
         })
 
         
-        joinBtn.addEventListener('click' , (e) => {
+        function joinRoom(){
             if(isJoined){
                 alert("Seems like you're already joined in a room , Refresh the page to join another room.")
                 return
             }
-            else if(roomKey.value < 11){
-                alert('Room Key length greater than allowed length (11 characters).')
-                return
-            }
-            else if(roomKey.value === '') return
-            else if(displayRoomKey.innerText === '') displayRoomKey.innerText = `Joined Room: ${roomKey.value}`
-            user.emit('joinRoom' , roomKey.value )
+            else if(displayRoomKey.innerText === '' && key) displayRoomKey.innerText = `Joined Room: ${key}`
+            user.emit('joinRoom' , key )
             isJoined = true
-        })
+        }
 
         fileInput.addEventListener('change' , () => {
             isFile = true
@@ -200,11 +217,7 @@
 
 
 
-        user.on('TakeUserId' , (userId) => {
-            if(user_id == ''){
-                user_id = userId
-            }
-        })
+        
 
         user.on('addtypingball' , (userColor , isBubble) => {
             if(!isBubble){
@@ -572,7 +585,6 @@
             message.value = ''
             displayRoomKey.value = ''
             memberColorBalls.value = ''
-            roomKey.value = ''
             chatBox.innerHTML = ''
         })
     </script>

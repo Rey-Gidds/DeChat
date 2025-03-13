@@ -19,21 +19,30 @@ const msg_index = {}
 const isBubble = {}
 const isReplying = {}
 
-app.use(express.static(path.resolve('./public')))
+app.use(express.static(path.join(__dirname, 'public')));
+
+
 
 // To increase the size to transfer files , easily
 app.use(express.json({limit: '50mb'})) 
 app.use(express.urlencoded({limit: '50mb' , extended: true}))
 
 app.get('/', (req, res) => {
-  return res.sendFile('/public/index.html');
+    return res.sendFile(path.resolve(__dirname, 'public', 'doors.html'));
 });
+
+app.get('/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
 
 function assignColors(colors){
     return Math.floor(Math.random()*colors.length)
 }
 
 io.on('connection' , user => {
+    io.emit("displayAvailableRooms" , rooms)
     user.on('joinRoom' , (roomKey) => {
         if(!rooms[roomKey]){
             rooms[roomKey] = {}
@@ -41,7 +50,8 @@ io.on('connection' , user => {
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
             isBubble[roomKey] = false
-            isReplying[roomKey] = {}        
+            isReplying[roomKey] = {}
+            io.emit("displayAvailableRooms" , rooms)        
         }
         else if(Object.keys(rooms[roomKey]).length >= 8) {
             user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
@@ -55,7 +65,9 @@ io.on('connection' , user => {
 
         let index = assignColors(roomColors[roomKey])
 
-        io.to(roomKey).emit('TakeUserId' , user.id)
+        user.on("getUserId" , () => {
+            io.to(user.id).emit('TakeUserId' , user.id)
+        })
 
         rooms[roomKey][user.id] = roomColors[roomKey][index]
 

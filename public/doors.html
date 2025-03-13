@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doors</title>
+    
+</head>
+<body>
+    <h1>Doors</h1>
+    <button id="createRoom">Create Room</button>
+    <div id="active_rooms"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const user = io()
+        const createRoomBtn = document.getElementById("createRoom")
+        let active_rooms = document.getElementById("active_rooms")
+        if(active_rooms.innerHTML = ''){
+            active_rooms.innerText = "No active rooms."
+        }
+        createRoomBtn.addEventListener('click' , () => {
+            localStorage.setItem("isCreate" , JSON.stringify(true))
+            window.location.href = "index.html"
+        })
+
+        user.on("displayAvailableRooms" , (rooms) => {
+            displayRooms(rooms)
+        })
+        function displayRooms(rooms){
+            Object.keys(rooms).forEach((room) => {
+                let roomBlock = document.createElement('div')
+                let room_length = rooms[room].length
+                roomBlock.className = "room_block"
+                roomBlock.innerHTML = 
+                `
+                <h2 class="roomTitle">${room}</h2>
+                <div class="members">${room_length} / 8</div>
+                <button class="joinBtn" onclick=joinCall("${room}")>Join</button>
+                `
+                active_rooms.appendChild(roomBlock)
+            })
+        }
+
+        function joinCall(roomKey){
+            localStorage.setItem("roomKey" , JSON.stringify(roomKey))
+            window.location.href="index.html"
+        }
+    </script>
+</body>
+</html>
