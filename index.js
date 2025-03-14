@@ -67,8 +67,7 @@ io.on('connection' , user => {
         isReplying[roomKey][user.id] = [false , false , '' , '']
 
         let index = assignColors(roomColors[roomKey])
-
-
+        
         rooms[roomKey][user.id] = roomColors[roomKey][index]
 
 
@@ -154,6 +153,7 @@ io.on('connection' , user => {
             io.to(roomKey).emit('userDisconnected')
 
             io.to(roomKey).emit('removeMemberColorBall' , userColor)
+            io.to(roomKey).emit('removetypingBall' , userColor)
 
             assignedColors[roomKey] = assignedColors[roomKey].filter((assignedColor) => { return assignedColor != userColor })
 

@@ -46,9 +46,9 @@
         </div>        
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script>
-        const user = io()
+        const user = io('https://dechat-o5h4.onrender.com')
         const sendbtn = document.getElementById('sendbtn')
         const room_title = document.getElementById('room_title')
         const keyBtn = document.getElementById('createKey')
@@ -126,8 +126,6 @@
             }
         })
 
-        // To ensure empty values when user first loads the web for the first time
-        message.value = ''
 
         // Function to generate the random key , 11 characters in length
         keyBtn.addEventListener('click' , (e) => {
@@ -207,7 +205,9 @@
         let typingTimeout;
         message.addEventListener('focus' , () => {
             clearTimeout(typingTimeout)
-            user.emit('typing')
+            setTimeout(() => {
+                user.emit('typing')
+            } , 100)
         })
 
         message.addEventListener('blur' , () => {
@@ -266,11 +266,11 @@
                 return
             }
             else if(isEdit){
-                user.emit('editMsg' , msg_to_edit_index , message.value)
+                user.emit('editMsg' , msg_to_edit_index , message.value.trim())
                 message.value = ''
                 return
             }
-            user.emit('send_message' , message.value)
+            user.emit('send_message' , message.value.trim())
             message.value = ''
         })
 
@@ -325,11 +325,11 @@
             let typingBubble = document.getElementById('typingBalls')
             let msgContainer = document.createElement('div') // Main container
             msgContainer.className = 'msgBubble'
-            msgContainer.setAttribute('id', msg_index)
             msgContainer.style.border = `3px dashed ${userColor}`
 
             let newMsg = document.createElement('p');
             newMsg.className = 'messageContent';
+            newMsg.id = `content_${msg_index}`
             
 
             if(sender == user_id){
@@ -437,7 +437,7 @@
 
         user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor) => {
             
-            let editedMsgContainer = document.getElementById(msg_index_for_edit)
+            let editedMsgContainer = document.getElementById(`content_${msg_index_for_edit}`)
             editedMsgContainer.innerHTML = ''
 
             render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer)
@@ -466,7 +466,6 @@
                         <i class="fa-solid fa-reply"></i>
                     </button>
                 `;
-                cancelReply()
                 msgContainer.appendChild(replyMsg)
             }
             else if(flag_reply){
@@ -480,13 +479,13 @@
                     </button>
                 `;
                 msgContainer.appendChild(replyMsg)
-                cancelReply()
                 replyPreviewContainer.innerHTML = ''
             }
 
             msgContainer.style.color = userColor
             let new_msg = document.createElement('p')
             new_msg.className = 'messageContent'
+            new_msg.id = `content_${msg_index}`
 
             new_msg.innerHTML = `<div>${msg}</div>`;
             if (sender == user_id) {
@@ -512,6 +511,7 @@
                 receiveSound.play();
             }
             msgContainer.appendChild(new_msg)
+            cancelReply()
             return
         }
 

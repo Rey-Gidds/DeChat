@@ -197,9 +197,9 @@
         <div class="empty-state">No active rooms. Create one to get started!</div>
     </div>
     
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script>
-        const user = io();
+        const user = io('https://dechat-o5h4.onrender.com');
         const createRoomBtn = document.getElementById("createRoom");
         const active_rooms = document.getElementById("active_rooms");
         
