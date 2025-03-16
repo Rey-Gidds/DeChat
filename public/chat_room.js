@@ -102,11 +102,6 @@ keyBtn.addEventListener('click' , (e) => {
     scrollToBottomWindow()
 })
 
-document.addEventListener('keydown', (e) => {
-    if(e.key === 'Enter'){
-        send_Message()
-    }
-})
 
 function joinRoom(){
     if(isJoined){
@@ -205,7 +200,8 @@ user.on('removetypingBall' , (userColor) => {
     }
 })
 
-function send_Message(){
+
+sendbtn.addEventListener('click' , (e) => {
     if(!isJoined){
         alert("Seems like you're not joined in any room :(")
         return
@@ -223,14 +219,11 @@ function send_Message(){
     else if(isEdit){
         user.emit('editMsg' , msg_to_edit_index , message.value.trim())
         message.value = ''
+        cancelEdit()
         return
     }
     user.emit('send_message' , message.value.trim())
-    message.value = ''
-}
-
-sendbtn.addEventListener('click' , (e) => {
-    send_Message()  
+    message.value = '' 
 })
 
 
@@ -264,8 +257,8 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
     let msgContainer = document.createElement('div'); // Main container
     msgContainer.className = 'msgBubble';
     msgContainer.style.color = userColor;
-    msgContainer.setAttribute('id', msg_index);
-    render_msg({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor,msgContainer)
+    msgContainer.id = msg_index;
+    render_msg({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor,msgContainer,false)
 
     chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
 
@@ -284,6 +277,7 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
     let typingBubble = document.getElementById('typingBalls')
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
+    msgContainer.id = msg_index
     msgContainer.style.border = `3px dashed ${userColor}`
 
     let newMsg = document.createElement('p');
@@ -402,9 +396,7 @@ user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit , reply
     let editedMsgContainer = document.getElementById(`content_${msg_index_for_edit}`)
     editedMsgContainer.innerHTML = ''
 
-    render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer)
-    
-    cancelEdit()
+    render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer , true)
 })
 
 function messageNotification(){
@@ -416,7 +408,7 @@ function messageNotification(){
     })
 }
 
-function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer){
+function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer , editing_msg){
 
     if(flag_file){
         let replyMsg = document.createElement('div');
@@ -443,10 +435,18 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         msgContainer.appendChild(replyMsg)
     }
 
+    let new_msg;
+    if(editing_msg){
+        new_msg = document.getElementById(`content_${msg_index}`)
+        new_msg.innerHTML = ''
+    }
+    else{
+        new_msg = document.createElement('p')
+        new_msg.className = 'messageContent'
+        new_msg.id = `content_${msg_index}`
+    }
+
     msgContainer.style.color = userColor
-    let new_msg = document.createElement('p')
-    new_msg.className = 'messageContent'
-    new_msg.id = `content_${msg_index}`
 
     new_msg.innerHTML = `<div>${msg}</div>`;
     if (sender == user_id) {
