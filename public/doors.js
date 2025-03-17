@@ -1,4 +1,4 @@
-const user = io('https://dechat-o5h4.onrender.com');
+const user = io();
 const createRoomBtn = document.getElementById("createRoom");
 const active_rooms = document.getElementById("active_rooms");
 

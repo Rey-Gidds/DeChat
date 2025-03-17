@@ -7,9 +7,9 @@ const { Server } = require("socket.io");
 const { Socket } = require('dgram');
 
 const io = new Server(server , {
-    maxHttpBufferSize: 10e6,
-    pingTimeout: 60000,
-    pingInterval: 25000
+    maxHttpBufferSize: 5e6,
+    pingTimeout: 25000,
+    pingInterval: 1000
 })
 
 const rooms = {}

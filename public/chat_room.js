@@ -1,4 +1,4 @@
-const user = io('https://dechat-o5h4.onrender.com')
+const user = io()
 const sendbtn = document.getElementById('sendbtn')
 const room_title = document.getElementById('room_title')
 const keyBtn = document.getElementById('createKey')
@@ -42,6 +42,11 @@ let msg_to_edit_index = null
 let count = 0
 
 console.log(isCreate)
+document.addEventListener("visibilitychange" , () => {
+    if(document.visibilityState === "visible"){
+        user.connect()
+    }
+})
 
 if(!isCreate){
     console.log("Joining Room")
@@ -193,7 +198,9 @@ function createTypingBubbleElement(){
 user.on('removetypingBall' , (userColor) => {
     let removeBall = document.getElementById(`typing_ball_${userColor}`)
     let typingBubble = document.getElementById('typingBalls')
-    removeBall.remove()
+    if(removeBall){
+        removeBall.remove()
+    }
     if(typingBubble.innerHTML === ''){
         typingBubble.remove()
         user.emit('updateBubbleFlag' , false)
