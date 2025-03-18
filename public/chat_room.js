@@ -434,7 +434,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}")/>
-            <button class='replyBtn' onclick='replyFile("${rmsg}" , "${rcolor}")'>
+            <button class='replyBtn' onclick=replyFile("${rmsg}" , "${rcolor}")>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -446,7 +446,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.color = rcolor;
         replyMsg.innerHTML = `
             <span class="replyText">${rmsg}</span>
-            <button class='replyBtn' onclick='reply(${stringify_message(rmsg)} , "${rcolor}")'>
+            <button class='replyBtn' onclick=reply(${stringify_message(rmsg)} , "${rcolor}")>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -493,7 +493,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
-            <button class='replyBtn' onclick='reply(${stringify_message(msg)} , "${userColor}")'>
+            <button class='replyBtn' onclick=reply(${stringify_message(msg)} , "${userColor}")>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
