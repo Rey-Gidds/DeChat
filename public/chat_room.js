@@ -9,6 +9,7 @@ const fileInput = document.getElementById('fileInput')
 let sending_indicator = document.getElementById('sending-indicator')
 let chatBox = document.getElementById('chatBox')
 let notificationBtn = document.getElementById('notify')
+let display_room_title = document.getElementById('display_room_title')
 let replyPreviewContainer = document.getElementById('replyPreviewContainer')
 let message = document.getElementById('message')
 let imageContainer = document.getElementById('imageContainer')
@@ -41,7 +42,7 @@ let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
 let msg_to_edit_index = null
 let count = 0
 
-console.log(isCreate)
+display_room_title.style.display = 'none'
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
         user.connect()
@@ -115,8 +116,14 @@ function joinRoom(){
     }
     else if(displayRoomKey.innerText === '' && key) displayRoomKey.innerText = `Joined Room: ${key}`
     user.emit('joinRoom' , key , room_title.value)
+    user.emit('get_room_title')
     isJoined = true
 }
+
+user.on('take_room_title' , (room_title) => {
+    display_room_title.style.display = 'block'
+    display_room_title.textContent = room_title
+})
 
 fileInput.addEventListener('change' , () => {
     isFile = true
@@ -201,7 +208,7 @@ user.on('removetypingBall' , (userColor) => {
     if(removeBall){
         removeBall.remove()
     }
-    if(typingBubble.innerHTML === ''){
+    if(typingBubble && typingBubble.innerHTML === ''){
         typingBubble.remove()
         user.emit('updateBubbleFlag' , false)
     }
@@ -220,7 +227,7 @@ sendbtn.addEventListener('click' , (e) => {
         cancelImg()
         return
     }
-    else if(message.value === ''){
+    else if(message.value.trim() === ''){
         return
     }
     else if(isEdit){
@@ -294,6 +301,8 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
 
     if(sender == user_id){
         msgContainer.style.borderRadius = '20px 20px 2px 20px'
+        msgContainer.style.width = '48%'
+        msgContainer.style.alignSelf = 'flex-end'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
         <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
             <i class="fa-solid fa-trash"></i>
@@ -301,6 +310,8 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
     }
     else{
         msgContainer.style.borderRadius = '20px 20px 20px 2px'
+        msgContainer.style.width = '48%'
+        msgContainer.style.alignSelf = 'flex-start'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
         <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
             <i class="fa-solid fa-reply"></i>
@@ -460,7 +471,11 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         
         if(isReplying) cancelReply()
 
-        msgContainer.style.borderRadius = '20px 20px 2px 20px'
+        if(!editing_msg){
+            msgContainer.style.borderRadius = '20px 20px 2px 20px'
+            msgContainer.style.width = '48%'
+            msgContainer.style.alignSelf = 'flex-end'
+        }
         new_msg.innerHTML += `
             <div class='msgBtnContainer'>
                 <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, ${stringify_message(msg)} , "${userColor}")'>
@@ -472,7 +487,11 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
             </div>
         `;
     } else {
-        msgContainer.style.borderRadius = '20px 20px 20px 2px'
+        if(!editing_msg){
+            msgContainer.style.borderRadius = '20px 20px 20px 2px'
+            msgContainer.style.width = '48%'
+            msgContainer.style.alignSelf = 'flex-start'
+        }
         new_msg.innerHTML += `
             <button class='replyBtn' onclick='reply(${stringify_message(msg)} , "${userColor}")'>
                 <i class="fa-solid fa-reply"></i>
@@ -481,7 +500,10 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         messageNotification()
         receiveSound.play();
     }
-    msgContainer.appendChild(new_msg)
+    if(!editing_msg){
+        msgContainer.appendChild(new_msg)
+    }
+    
     return
 }
 

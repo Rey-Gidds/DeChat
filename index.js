@@ -62,6 +62,10 @@ io.on('connection' , user => {
         
         user.join(roomKey)
 
+        user.on('get_room_title' , () => {
+            io.to(user.id).emit('take_room_title' , room_titles[roomKey])
+        })
+
         io.emit('TakeUserId' , user.id)
 
         isReplying[roomKey][user.id] = [false , false , '' , '']
