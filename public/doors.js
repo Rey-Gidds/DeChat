@@ -4,6 +4,7 @@ const active_rooms = document.getElementById("active_rooms");
 
 createRoomBtn.addEventListener('click', () => {
     localStorage.setItem("isCreate", JSON.stringify(true));
+    user.disconnect()
     window.location.href = "index.html";
 });
 
@@ -53,5 +54,6 @@ function displayRooms(rooms , room_titles) {
 function joinCall(roomKey, isCreate) {
     localStorage.setItem("isCreate", JSON.stringify(isCreate));
     localStorage.setItem("roomKey", JSON.stringify(roomKey));
+    user.disconnect()
     window.location.href = "index.html";
 }
