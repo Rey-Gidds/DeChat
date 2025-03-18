@@ -301,7 +301,7 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
 
     if(sender == user_id){
         msgContainer.style.borderRadius = '20px 20px 2px 20px'
-        msgContainer.style.width = '70%'
+        msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-end'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
         <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
@@ -310,7 +310,7 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
     }
     else{
         msgContainer.style.borderRadius = '20px 20px 20px 2px'
-        msgContainer.style.width = '70%'
+        msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-start'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
         <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
@@ -473,7 +473,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
 
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 2px 20px'
-            msgContainer.style.width = '70%'
+            msgContainer.style.width = 'fit-content'
             msgContainer.style.alignSelf = 'flex-end'
         }
         new_msg.innerHTML += `
@@ -489,7 +489,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
     } else {
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 20px 2px'
-            msgContainer.style.width = '70%'
+            msgContainer.style.width = 'fit-content'
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
