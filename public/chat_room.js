@@ -473,7 +473,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
 
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 2px 20px'
-            msgContainer.style.width = 'fit-content'
+            msgContainer.style.width = '70%'
             msgContainer.style.alignSelf = 'flex-end'
         }
         new_msg.innerHTML += `
@@ -489,7 +489,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
     } else {
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 20px 2px'
-            msgContainer.style.width = 'fit-content'
+            msgContainer.style.width = '70%'
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
