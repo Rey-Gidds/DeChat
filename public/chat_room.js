@@ -508,11 +508,14 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
 }
 
 chatBox.addEventListener('click' , (e) => {
-    if(e.target.className === 'replyBtn'){
-        let msg = e.target.getAttribute('data-message');
-        let color = e.target.getAttribute('data-color');
+    let button = e.target;
+    if(button.className === 'replyBtn'){
+        let msg = button.getAttribute('data-message');
+        let color = button.getAttribute('data-color');
         reply(msg , color);
+        return;
     }
+    return;
 })
 
 function editMsg(edit_index , msg , color){
