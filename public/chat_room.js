@@ -220,6 +220,9 @@ sendbtn.addEventListener('click' , (e) => {
         alert("Seems like you're not joined in any room :(")
         return
     }
+    if(isReplying){
+        cancelReply();
+    }
     if(isFile){
         user.emit('sendFile' , fileData , fileType)
         sending_indicator.innerHTML = '<div class="sending-bar"></div>'
@@ -334,7 +337,7 @@ function openImageWindow(data){
         let imageWindow;
         imageWindow = window.open("" , "Image Window" , "_blank")
         if(imageWindow == null) return
-        imageWindow.document.write(`
+        imageWindow.document.writeln(`
         <html>
             <head>
                 <title>Image Viewer</title>
