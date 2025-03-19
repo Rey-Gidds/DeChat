@@ -250,7 +250,7 @@ function stringify_message(value){
     which include: reply() , editMsg() in which the msg with new lines cannot be passed directly as 
     an argument 
 */
-    let dummy_value = value
+    let dummy_value = value;
     return JSON.stringify(dummy_value)
 }
 
@@ -446,7 +446,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.color = rcolor;
         replyMsg.innerHTML = `
             <span class="replyText">${rmsg}</span>
-            <button class='replyBtn' onclick=reply(${stringify_message(rmsg)} , "${rcolor}")>
+            <button class='replyBtn' data-message = ${stringify_message(rmsg)} data-color = "${rcolor}">
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -493,7 +493,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
-            <button class='replyBtn' onclick=reply(${stringify_message(msg)} , "${userColor}")>
+            <button class='replyBtn' data-message=${stringify_message(msg)} data-color="${userColor}" >
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -506,6 +506,14 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
     
     return
 }
+
+chatBox.addEventListener('click' , (e) => {
+    if(e.target.className === 'replyBtn'){
+        let msg = e.target.getAttribute('data-message');
+        let color = e.target.getAttribute('data-color');
+        reply(msg , color);
+    }
+})
 
 function editMsg(edit_index , msg , color){
     isEdit = true
