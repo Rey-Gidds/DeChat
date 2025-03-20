@@ -218,7 +218,7 @@ input {
 }
 
 /* New Aesthetic Delete Button */
-.DelBtns , .EditBtn , .cancelReplyBtn , .replyBtn , #cancelImgBtn{
+.DelBtns , .EditBtn , .cancelReplyBtn , .replyBtn , #cancelImgBtn , .replyBtnImg{
     background-color: black; 
     color: white;
     width: fit-content;
@@ -240,12 +240,12 @@ input {
     transform: translate(-10px  , -15px);
 }
 
-.DelBtns:hover , .EditBtn:hover , .cancelReplyBtn:hover , .replyBtn:hover{
+.DelBtns:hover , .EditBtn:hover , .cancelReplyBtn:hover , .replyBtn:hover , .replyBtnImg:hover{
     background-color: grey; 
     transform: scale(1.1);
 }
 
-.DelBtns:active , .EditBtn:active , .cancelReplyBtn:active , .replyBtn:active{
+.DelBtns:active , .EditBtn:active , .cancelReplyBtn:active , .replyBtn:active , .replyBtnImg:active{
     background-color: black; 
     transform: scale(0.95);
 }

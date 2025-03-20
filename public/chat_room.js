@@ -220,9 +220,6 @@ sendbtn.addEventListener('click' , (e) => {
         alert("Seems like you're not joined in any room :(")
         return
     }
-    if(isReplying){
-        cancelReply();
-    }
     if(isFile){
         user.emit('sendFile' , fileData , fileType)
         sending_indicator.innerHTML = '<div class="sending-bar"></div>'
@@ -316,7 +313,7 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
         msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-start'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
-        <button class='replyBtn' onclick='replyFile("${file_data}", "${userColor}")'>
+        <button class='replyBtnImg' onclick='replyFile("${file_data}", "${userColor}")'>
             <i class="fa-solid fa-reply"></i>
         </button>`
         messageNotification()
@@ -403,6 +400,7 @@ function reply(msg , color){
     console.log('before sending to backend: ' , msg , color)
     user.emit('update_reply_flag' , false , true , msg , color)
     scrollToBottomWindow()
+    return;
 }
 
 function cancelReply(){
@@ -437,7 +435,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}")/>
-            <button class='replyBtn' onclick=replyFile("${rmsg}" , "${rcolor}")>
+            <button class='replyBtnImg' onclick=replyFile("${rmsg}" , "${rcolor}")>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -472,7 +470,9 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
     new_msg.innerHTML = `<div>${msg}</div>`;
     if (sender == user_id) {
         
-        if(isReplying) cancelReply()
+        if(isReplying){
+            cancelReply()
+        } 
 
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 2px 20px'
