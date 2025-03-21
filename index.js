@@ -13,7 +13,7 @@ const io = new Server(server , {
 })
 
 const rooms = {}
-const roomColors = {}
+const colorPool = {}
 const assignedColors = {}
 const msg_index = {}
 const isBubble = {}
@@ -48,14 +48,14 @@ io.on('connection' , user => {
         if(!rooms[roomKey]){
             rooms[roomKey] = {}
             room_titles[roomKey] = room_title
-            roomColors[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
+            colorPool[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
             isBubble[roomKey] = false
             isReplying[roomKey] = {}      
         }
         else if(Object.keys(rooms[roomKey]).length >= 8) {
-            user.emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
+            io.to(user.id).emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
             return
         }
 
@@ -66,30 +66,30 @@ io.on('connection' , user => {
             io.to(user.id).emit('take_room_title' , room_titles[roomKey])
         })
 
-        io.emit('TakeUserId' , user.id)
+        io.to(user.id).emit('TakeUserId' , user.id)
 
         isReplying[roomKey][user.id] = [false , false , '' , '']
 
-        let index = assignColors(roomColors[roomKey])
+        let index = assignColors(colorPool[roomKey])
         
-        rooms[roomKey][user.id] = roomColors[roomKey][index]
+        rooms[roomKey][user.id] = colorPool[roomKey][index]
 
 
-        if(index === roomColors[roomKey].length - 1){
-            assignedColors[roomKey].push(roomColors[roomKey].pop())
+        if(index === colorPool[roomKey].length - 1){
+            assignedColors[roomKey].push(colorPool[roomKey].pop())
         }
         else{
-            let temp = roomColors[roomKey][index]
-            roomColors[roomKey][index] = roomColors[roomKey][roomColors[roomKey].length - 1]
-            roomColors[roomKey][roomColors[roomKey].length - 1] = temp
-            assignedColors[roomKey].push(roomColors[roomKey].pop())
+            let temp = colorPool[roomKey][index]
+            colorPool[roomKey][index] = colorPool[roomKey][colorPool[roomKey].length - 1]
+            colorPool[roomKey][colorPool[roomKey].length - 1] = temp
+            assignedColors[roomKey].push(colorPool[roomKey].pop())
         }
         
         console.log(assignedColors)
 
         io.to(roomKey).emit('addMemberBall' , assignedColors[roomKey])
 
-        console.log(roomColors , roomColors[roomKey].length)
+        console.log(colorPool , colorPool[roomKey].length)
         
         
         console.log('A Dechatter just Slid in.')
@@ -163,12 +163,12 @@ io.on('connection' , user => {
 
             console.log('Disconnected: ' , assignedColors[roomKey])
 
-            roomColors[roomKey].push(userColor)
+            colorPool[roomKey].push(userColor)
 
             delete rooms[roomKey][user.id]
 
             if(Object.keys(rooms[roomKey]).length === 0 || assignedColors[roomKey].length === 0){
-                delete roomColors[roomKey]
+                delete colorPool[roomKey]
                 delete assignedColors[roomKey]
                 delete rooms[roomKey]
                 delete isBubble[roomKey]

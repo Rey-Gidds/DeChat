@@ -25,7 +25,16 @@ body {
     align-items: center;
     padding: 2rem;
 }
-
+a{
+    color: white;
+    text-decoration: none;
+    margin: 10px;
+    font-size: smaller;
+}
+a:visited , a:active{
+    color: white;
+    text-decoration: none;
+}
 h1 {
     font-size: 3.5rem;
     margin-bottom: 1.5rem;

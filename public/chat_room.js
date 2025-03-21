@@ -27,7 +27,6 @@ let displayRoomKey = document.getElementById('displayRoomKey')
         3. file data being sent 
         4. type of the file being sent
 */
-let notification;
 let key = ''
 let user_id = ''
 let fileData = ''
@@ -69,20 +68,6 @@ user.on('TakeUserId' , (userId) => {
 })
 
 
-Notification.requestPermission()
-
-
-document.addEventListener('visibilitychange' , () => {
-    if(document.visibilityState === "hidden"){
-        notify = true
-        notification = new Notification("Trying to hide the chats huh ? 🥷" , { silent: true })
-    } else {
-        count = 0
-        notify = false
-        notification.close()
-    }
-})
-
 
 // Function to generate the random key , 11 characters in length
 keyBtn.addEventListener('click' , (e) => {
@@ -91,12 +76,15 @@ keyBtn.addEventListener('click' , (e) => {
         alert("Room Title too short.")
         return
     }
+    else if(room_title.value.length > 15){
+        alert("Room Title too long.")
+        return
+    }
     else if(isJoined){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
     }
     let chars = 'ABCDEFGHIJKL0123456789MNOPQRST@$&_UVWXYZ'
-    let nums = ''
     for(let i = 0 ; i<11 ; i++){
         let index = Math.floor(Math.random()*chars.length)
         key += chars[index]
@@ -129,9 +117,8 @@ fileInput.addEventListener('change' , () => {
     isFile = true
     let file = fileInput.files[0]
     let fileSize = (file.size/1024)
-    if(fileSize > 350){
-        replyPreviewContainer.innerHTML = `Too large file ! ,<br>
-        currently we only support file upto 350 KB. <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
+    if(fileSize > 500){
+        replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
         cancelImg()
         return
     }
@@ -193,7 +180,6 @@ user.on('addtypingball' , (userColor , isBubble) => {
     ball.setAttribute('id' , `typing_ball_${userColor}`)
     ball.style.backgroundColor = userColor
     typingBubble.appendChild(ball)
-    scrollToBottomChatBox()
 })
 
 function createTypingBubbleElement(){
@@ -435,7 +421,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}")/>
-            <button class='replyBtnImg' onclick=replyFile("${rmsg}" , "${rcolor}")>
+            <button class='replyBtnImg' onclick='replyFile("${rmsg}" , "${rcolor}")'>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
