@@ -105,6 +105,10 @@ keyBtn.addEventListener('click' , (e) => {
         alert("Room Title too long.")
         return
     }
+    else if(max_connections.value > 8 || max_connections.value < 2){
+        alert("Invalid Connections , minimum 2 and maximum 8 members allowed.")
+        return
+    }
     else if(isJoined){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
@@ -116,7 +120,6 @@ keyBtn.addEventListener('click' , (e) => {
     }
     console.log(key)
     joinRoom()
-    isJoined = true
     displayRoomKey.innerText = `Joined Room: ${key}`
     scrollToBottomWindow()
 })
@@ -125,10 +128,6 @@ keyBtn.addEventListener('click' , (e) => {
 function joinRoom(){
     if(isJoined){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
-        return
-    }
-    else if(max_connections.value > 8 || max_connections.value < 2){
-        alert("Invalid Connections , minimum 2 and maximum 8 members allowed.")
         return
     }
     else if(displayRoomKey.innerText === '' && key) {
