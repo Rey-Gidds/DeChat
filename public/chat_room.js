@@ -127,8 +127,8 @@ function joinRoom(){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
     }
-    else if(max_connections.value > 8){
-        alert("Too many connections , allowed upto 8 members.")
+    else if(max_connections.value > 8 || max_connections.value < 2){
+        alert("Invalid Connections , minimum 2 and maximum 8 members allowed.")
         return
     }
     else if(displayRoomKey.innerText === '' && key) {
