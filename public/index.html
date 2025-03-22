@@ -11,26 +11,29 @@
 </head>
 <body>
     <h1 id="display_room_title"></h1>
+
     <div id="createRoomArea">
         <div class="joinArea">
-            <input type="text" id="room_title" placeholder="Enter Room title">
-            <button id="createKey">Create</button>
+            <h1 style="text-align: center; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">Create Your Door</h1>
+            <br>
+            <label for="room_title">Door Title: </label>
+            <input type="text" id="room_title" placeholder="Enter Room title" name="room_title">
+            <br>
+            <label for="max_connections">Max Connections: </label>
+            <input type="number" id="max_connections" value="2" max="8" min="2" style="width: fit-content;" name="max_connections">
+            <br>
+            <button id="createKey">Open Your Door</button>
         </div>
     </div>
     
 
     <div id="displayRoomKey"></div>
-
     <div id="memberColorBalls"></div>
-    
     <div id="chatBox"></div>
-
     <div id="replyPreviewContainer"></div>
     <div id="imageContainer"></div>
-
     <div id="sending-indicator"></div>
     <div class="sendArea">
-
         <textarea id="message" placeholder="Type freely..." /></textarea>
         <input type="file" id="fileInput" style="display: none;" accept="image/*">
         

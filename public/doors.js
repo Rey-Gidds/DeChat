@@ -8,8 +8,8 @@ createRoomBtn.addEventListener('click', () => {
     window.location.href = "index.html";
 });
 
-user.on("displayAvailableRooms", (rooms , room_title) => {
-    displayRooms(rooms , room_title);
+user.on("displayAvailableRooms", (rooms , room_title , room_max_connections) => {
+    displayRooms(rooms , room_title , room_max_connections);
 });
 
 user.on('destroyRoomBlock' , (room_key) => {
@@ -17,7 +17,7 @@ user.on('destroyRoomBlock' , (room_key) => {
     room.remove()
 })
 
-function displayRooms(rooms , room_titles) {
+function displayRooms(rooms , room_titles , room_max_connections) {
     // Clear previous content
     active_rooms.innerHTML = '';
     
@@ -31,20 +31,23 @@ function displayRooms(rooms , room_titles) {
     }
     
     // Display rooms
+    // room == roomKey for the available rooms.
     Object.keys(rooms).forEach((room) => {
         let roomBlock = document.createElement('div');
         let room_length = rooms[room].length;
+        let max_connections = room_max_connections[room]
         roomBlock.className = "room_block";
         roomBlock.id = `${room}`;
         
         // Show capacity status color based on room fullness
-        let statusColor = room_length < 6 ? 'var(--success-color)' : 
-                            room_length < 8 ? '#f0ad4e' : 'var(--danger-color)';
+        let statusColor;
+        if(room_length < max_connections) statusColor = 'var(--success-color)';
+        else statusColor = 'var(--danger-color)'
         
         roomBlock.innerHTML = `
             <h2 class="roomTitle">${room_titles[room]}</h2>
             <h3>${room}</h3>
-            <div class="members" style="--status-color: ${statusColor}">${room_length} / 8</div>
+            <div class="members" style="--status-color: ${statusColor}">${room_length} / ${max_connections}</div>
             <button class="joinBtn" onclick='joinCall("${room}", false)'>Join Room</button>
         `;
         active_rooms.appendChild(roomBlock);

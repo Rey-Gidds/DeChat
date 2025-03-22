@@ -6,15 +6,16 @@ const receiveSound = new Audio('receive.wav')
 const leaveSound = new Audio('newJoin1.wav')
 const delSound = new Audio('Remove_Msg.flac')
 const fileInput = document.getElementById('fileInput')
-let sending_indicator = document.getElementById('sending-indicator')
+let image_sending_indicator = document.getElementById('sending-indicator')
 let chatBox = document.getElementById('chatBox')
-let notificationBtn = document.getElementById('notify')
 let display_room_title = document.getElementById('display_room_title')
 let replyPreviewContainer = document.getElementById('replyPreviewContainer')
 let message = document.getElementById('message')
 let imageContainer = document.getElementById('imageContainer')
 let memberColorBalls = document.getElementById('memberColorBalls')
 let displayRoomKey = document.getElementById('displayRoomKey')
+let max_connections = document.getElementById('max_connections')
+let createRoomArea = document.getElementById('createRoomArea')
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -41,7 +42,7 @@ let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
 let msg_to_edit_index = null
 let count = 0
 
-display_room_title.style.display = 'none'
+
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
         user.connect()
@@ -49,16 +50,40 @@ document.addEventListener("visibilitychange" , () => {
 })
 
 if(!isCreate){
-    console.log("Joining Room")
-    let createArea = document.getElementById("createRoomArea")
+    remove_create_room_area();
     key = JSON.parse(localStorage.getItem("roomKey")) || null
-    console.log(key)
-    createArea.style.display = "none"
     if(key) {
         joinRoom()
     }
 }
+else{
+    // Only display the create room area if creating a room and after joining display the chat room elements and remove the create room elements
+    // refer to function joinRoom()
+    remove_chat_elements()
+    display_create_room_area()
+}
 
+function display_create_room_area(){
+    createRoomArea.style.display = 'block';
+}
+
+function remove_create_room_area(){
+    createRoomArea.style.display = 'none';
+}
+
+function remove_chat_elements(){
+    chatBox.style.display = 'none';
+    display_room_title.style.display = 'none';
+    document.querySelector('.sendArea').style.display = 'none';
+    memberColorBalls.style.display = 'none';
+}
+
+function display_chat_elements(){
+    chatBox.style.display = 'flex';
+    display_room_title.style.display = 'flex';
+    document.querySelector('.sendArea').style.display = 'flex';
+    memberColorBalls.style.display = 'flex';
+}
 
 user.on('TakeUserId' , (userId) => {
     if(user_id == ''){
@@ -102,9 +127,13 @@ function joinRoom(){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
     }
-    else if(displayRoomKey.innerText === '' && key) displayRoomKey.innerText = `Joined Room: ${key}`
-    user.emit('joinRoom' , key , room_title.value)
+    else if(displayRoomKey.innerText === '' && key) {
+        displayRoomKey.innerText = `Joined Room: ${key}`
+    }
+    user.emit('joinRoom' , key , room_title.value , max_connections.value)
     user.emit('get_room_title')
+    remove_create_room_area()
+    display_chat_elements()
     isJoined = true
 }
 
@@ -208,7 +237,7 @@ sendbtn.addEventListener('click' , (e) => {
     }
     if(isFile){
         user.emit('sendFile' , fileData , fileType)
-        sending_indicator.innerHTML = '<div class="sending-bar"></div>'
+        image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
         console.log('sending the file... ' , fileData ,fileType)
         cancelImg()
         return
@@ -273,7 +302,7 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
 });
 
 user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
-    sending_indicator.innerHTML = ''
+    image_sending_indicator.innerHTML = ''
     let typingBubble = document.getElementById('typingBalls')
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
@@ -569,6 +598,14 @@ user.on('removeMemberColorBall' , (color) => {
 
 user.on('RoomLimitReached' , (msg) => {
     displayRoomKey.innerText = msg
+    let back_to_doors = document.createElement('a')
+    back_to_doors.href = 'doors.html'
+    back_to_doors.innerText = '    { Back To Doors }'
+    back_to_doors.style.textDecoration = 'none'
+    back_to_doors.style.fontSize = 'large'
+    back_to_doors.style.marginTop = '10px'
+    displayRoomKey.appendChild(back_to_doors)
+    user.disconnect()
 })
 
 user.on('disconnected' , () => {

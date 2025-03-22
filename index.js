@@ -19,6 +19,7 @@ const msg_index = {}
 const isBubble = {}
 const isReplying = {}
 const room_titles = {}
+const room_max_connections = {}
 
 
 // To increase the size to transfer files , easily
@@ -42,20 +43,21 @@ function assignColors(colors){
 }
 
 io.on('connection' , user => {
-    io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles)
+    io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles , room_max_connections)
     
-    user.on('joinRoom' , (roomKey , room_title) => {
+    user.on('joinRoom' , (roomKey , room_title , max_connections) => {
         if(!rooms[roomKey]){
             rooms[roomKey] = {}
             room_titles[roomKey] = room_title
+            room_max_connections[roomKey] = max_connections
             colorPool[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
             assignedColors[roomKey] = []
             msg_index[roomKey] = 0
             isBubble[roomKey] = false
             isReplying[roomKey] = {}      
         }
-        else if(Object.keys(rooms[roomKey]).length >= 8) {
-            io.to(user.id).emit('RoomLimitReached' , 'Cannot Connect room limit reached.')
+        else if(Object.keys(rooms[roomKey]).length >= room_max_connections[roomKey]) {
+            io.to(user.id).emit('RoomLimitReached' , 'Cannot Connect  , Room limit reached :(')
             return
         }
 
@@ -175,6 +177,7 @@ io.on('connection' , user => {
                 delete msg_index[roomKey]
                 delete isReplying[roomKey]
                 delete room_titles[roomKey]
+                delete room_max_connections[roomKey]
                 io.emit('destroyRoomBlock' , roomKey)
             }
         })
