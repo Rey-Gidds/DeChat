@@ -396,7 +396,7 @@ input {
 /* Mobile Responsiveness */
 @media screen and (max-width: 600px) {
     body{
-        overflow-x: hidden;
+        overflow: hidden;
     }
     .heading {
         font-size: 40px;

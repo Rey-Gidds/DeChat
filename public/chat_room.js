@@ -16,6 +16,7 @@ let memberColorBalls = document.getElementById('memberColorBalls')
 let displayRoomKey = document.getElementById('displayRoomKey')
 let max_connections = document.getElementById('max_connections')
 let createRoomArea = document.getElementById('createRoomArea')
+let room_header = document.getElementById('room_header')
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -72,6 +73,7 @@ function remove_create_room_area(){
 }
 
 function remove_chat_elements(){
+    room_header.style.display = 'none';
     chatBox.style.display = 'none';
     display_room_title.style.display = 'none';
     document.querySelector('.sendArea').style.display = 'none';
@@ -79,6 +81,7 @@ function remove_chat_elements(){
 }
 
 function display_chat_elements(){
+    room_header.style.display = 'flex';
     chatBox.style.display = 'flex';
     display_room_title.style.display = 'flex';
     document.querySelector('.sendArea').style.display = 'flex';
