@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Doors</title>
     <link rel="stylesheet" href="doors.css">
+    <!-- Manifest for install prompt & app info -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#121212">
+
+    <!-- Favicon -->
+    <link rel="icon" href="/icons/icon-192x192.png">
+    <!-- For iOS support -->
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+
 </head>
 <body>
     <div class="header">
@@ -27,5 +36,17 @@
     
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script src="doors.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function (registration) {
+                console.log('ServiceWorker registered with scope:', registration.scope);
+                }, function (err) {
+                console.log('ServiceWorker registration failed:', err);
+                });
+            });
+        }
+    </script>
 </body>
 </html>

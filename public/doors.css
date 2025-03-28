@@ -16,6 +16,10 @@
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+button{
+    -webkit-tap-highlight-color: transparent;
+}
+
 body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
