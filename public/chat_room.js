@@ -18,6 +18,10 @@ let max_connections = document.getElementById('max_connections')
 let createRoomArea = document.getElementById('createRoomArea')
 let room_header = document.getElementById('room_header')
 
+image_sending_indicator.style.display = 'none';
+imageContainer.style.display = 'none';
+replyPreviewContainer.style.display = 'none';
+
 // Varibles to store critical information at the frontend 
 /*  Note:
         Any variable changed from this below section may break the code , 
@@ -152,6 +156,8 @@ fileInput.addEventListener('change' , () => {
     isFile = true
     let file = fileInput.files[0]
     let fileSize = (file.size/1024)
+    replyPreviewContainer.style.display = 'flex';
+    imageContainer.style.display = 'flex';
     if(fileSize > 500){
         replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
         cancelImg()
@@ -167,7 +173,6 @@ fileInput.addEventListener('change' , () => {
             fileData = reader.result
             fileType = file.type
             scrollToBottomWindow()
-
         }
     }
     else{
@@ -183,6 +188,9 @@ function scrollToBottomWindow(){
 function cancelImg(){
     isFile = false
     imageContainer.innerHTML = ''
+    imageContainer.style.display = 'none';
+    replyPreviewContainer.style.display = 'none';
+    image_sending_indicator.style.display = 'none';
     fileInput.value = ''
 }
 
@@ -243,6 +251,7 @@ sendbtn.addEventListener('click' , (e) => {
     }
     if(isFile){
         user.emit('sendFile' , fileData , fileType)
+        image_sending_indicator.style.display = 'flex';
         image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
         console.log('sending the file... ' , fileData ,fileType)
         cancelImg()
@@ -309,6 +318,7 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
 
 user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
     image_sending_indicator.innerHTML = ''
+    image_sending_indicator.style.display = 'none';
     let typingBubble = document.getElementById('typingBalls')
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
@@ -390,6 +400,7 @@ function scrollToBottomChatBox(){
 
 function replyFile(file_data , color){
     isReplying = true
+    replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
     let replyPreview = document.createElement('div')
     replyPreview.className = 'replyPreview'
@@ -409,6 +420,7 @@ function replyFile(file_data , color){
 
 function reply(msg , color){
     isReplying = true
+    replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
     let replyPreview = document.createElement('div')
     replyPreview.className = 'replyPreview'
@@ -427,6 +439,7 @@ function reply(msg , color){
 function cancelReply(){
     isReplying = false
     replyPreviewContainer.innerHTML = ''
+    replyPreviewContainer.style.display = 'none';
     user.emit('update_reply_flag' , false , false , '' , '')
 }
 
@@ -544,6 +557,7 @@ chatBox.addEventListener('click' , (e) => {
 
 function editMsg(edit_index , msg , color){
     isEdit = true
+    replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
     let editPreview = document.createElement('div')
     editPreview.className = 'replyPreview'
@@ -561,6 +575,7 @@ function editMsg(edit_index , msg , color){
 function cancelEdit(){
     isEdit = false
     replyPreviewContainer.innerHTML = ''
+    replyPreviewContainer.style.display = 'none';
     message.value = ''
     msg_to_edit_index = null
 }
