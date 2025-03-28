@@ -120,7 +120,7 @@ keyBtn.addEventListener('click' , (e) => {
     }
     console.log(key)
     joinRoom()
-    displayRoomKey.innerText = `Joined Room: ${key}`
+    displayRoomKey.innerText = key;
     scrollToBottomWindow()
 })
 
