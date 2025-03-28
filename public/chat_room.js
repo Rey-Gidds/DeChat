@@ -1,4 +1,4 @@
-const user = io('https://dechat-o5h4.onrender.com')
+const user = io()
 const sendbtn = document.getElementById('sendbtn')
 const room_title = document.getElementById('room_title')
 const keyBtn = document.getElementById('createKey')
@@ -159,7 +159,7 @@ fileInput.addEventListener('change' , () => {
     replyPreviewContainer.style.display = 'flex';
     imageContainer.style.display = 'flex';
     if(fileSize > 500){
-        replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
+        replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=clearReplyPreview()><i class="fa-solid fa-xmark"></i></button>`
         cancelImg()
         return
     }
@@ -187,11 +187,24 @@ function scrollToBottomWindow(){
 
 function cancelImg(){
     isFile = false
-    imageContainer.innerHTML = ''
-    imageContainer.style.display = 'none';
-    replyPreviewContainer.style.display = 'none';
-    image_sending_indicator.style.display = 'none';
+    clearImagePreview();
     fileInput.value = ''
+}
+
+
+function clearReplyPreview(){
+    replyPreviewContainer.innerHTML = '';
+    replyPreviewContainer.style.display = 'none';
+}
+
+function clearImagePreview(){
+    imageContainer.innerHTML = '';
+    imageContainer.style.display = 'none';
+}
+
+function clearImageSendingIndicator(){
+    image_sending_indicator.innerHTML = '';
+    image_sending_indicator.style.display = 'none';
 }
 
 
@@ -267,6 +280,7 @@ sendbtn.addEventListener('click' , (e) => {
         return
     }
     user.emit('send_message' , message.value.trim())
+    if(isReplying) cancelReply();
     message.value = '' 
 })
 
@@ -317,8 +331,7 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
 });
 
 user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
-    image_sending_indicator.innerHTML = ''
-    image_sending_indicator.style.display = 'none';
+    clearImageSendingIndicator();
     let typingBubble = document.getElementById('typingBalls')
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
@@ -438,8 +451,7 @@ function reply(msg , color){
 
 function cancelReply(){
     isReplying = false
-    replyPreviewContainer.innerHTML = ''
-    replyPreviewContainer.style.display = 'none';
+    clearReplyPreview();
     user.emit('update_reply_flag' , false , false , '' , '')
 }
 
@@ -503,11 +515,6 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
 
     new_msg.innerHTML = `<div>${msg}</div>`;
     if (sender == user_id) {
-        
-        if(isReplying){
-            cancelReply()
-        } 
-
         if(!editing_msg){
             msgContainer.style.borderRadius = '20px 20px 2px 20px'
             msgContainer.style.width = '70%'
