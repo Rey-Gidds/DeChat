@@ -9,6 +9,8 @@ const ASSETS_TO_CACHE = [
   '/chat_room.js',
   '/about.html',
   '/about_page.css',
+  '/create_room.html',
+  '/create_room.css',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png'

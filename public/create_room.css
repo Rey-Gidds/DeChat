@@ -1,0 +1,105 @@
+/* Create Room Area Styling */
+body{
+    background-color: #121212;
+    color: white;
+}
+#createRoomArea {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+    width: 100%;
+    }
+
+    .joinArea {
+    background-color: #2a2a2a;
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    width: 90%;
+    max-width: 400px;
+    border: 1px solid #444;
+    }
+
+    .joinArea h1 {
+    color: #7289da;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-size: 28px;
+    margin-top: 0;
+    margin-bottom: 30px;
+    text-align: center;
+    }
+
+    input {
+    margin-bottom: 25px;
+    position: relative;
+    }
+
+    label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 16px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #e0e0e0;
+    font-weight: 500;
+    }
+
+    #room_title, #max_connections {
+    background-color: #3a3a3a;
+    border: 2px solid #555;
+    border-radius: 12px;
+    color: white;
+    font-size: 16px;
+    padding: 15px;
+    transition: all 0.3s ease;
+    width: 100%;
+    box-sizing: border-box;
+    }
+
+    #room_title:focus, #max_connections:focus {
+    border-color: #7289da;
+    box-shadow: 0 0 0 3px rgba(114, 137, 218, 0.25);
+    outline: none;
+    }
+
+    #max_connections {
+    width: 100%;
+    }
+
+    #createKey {
+    background: linear-gradient(135deg, #7289da, #5e77d4);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-top: 10px;
+    padding: 15px 0;
+    transition: all 0.3s ease;
+    width: 100%;
+    }
+
+    #createKey:hover {
+    background: linear-gradient(135deg, #5e77d4, #4a63c0);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(94, 119, 212, 0.4);
+    }
+
+    #createKey:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 8px rgba(94, 119, 212, 0.4);
+    }
+
+    /* Mobile responsiveness */
+    @media screen and (max-width: 600px) {
+        .joinArea {
+            padding: 30px 25px;
+            width: 85%;
+        }
+
+        .joinArea h1 {
+            font-size: 24px;
+        }
+    }

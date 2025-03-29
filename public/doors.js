@@ -10,7 +10,7 @@ user.on('Sustain_connection' , () => {
 createRoomBtn.addEventListener('click', () => {
     localStorage.setItem("isCreate", JSON.stringify(true));
     user.disconnect()
-    window.location.href = "index.html";
+    window.location.href = "create_room.html";
 });
 
 user.on("displayAvailableRooms", (rooms , room_title , room_max_connections) => {

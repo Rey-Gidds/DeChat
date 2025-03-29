@@ -1,6 +1,6 @@
 const user = io('https://dechat-o5h4.onrender.com')
 const sendbtn = document.getElementById('sendbtn')
-const room_title = document.getElementById('room_title')
+const room_title = JSON.parse(localStorage.getItem('room_title'))
 const keyBtn = document.getElementById('createKey')
 const receiveSound = new Audio('receive.wav')
 const leaveSound = new Audio('newJoin1.wav')
@@ -14,8 +14,7 @@ let message = document.getElementById('message')
 let imageContainer = document.getElementById('imageContainer')
 let memberColorBalls = document.getElementById('memberColorBalls')
 let displayRoomKey = document.getElementById('displayRoomKey')
-let max_connections = document.getElementById('max_connections')
-let createRoomArea = document.getElementById('createRoomArea')
+let max_connections = JSON.parse(localStorage.getItem('max_connections'));
 let room_header = document.getElementById('room_header')
 
 image_sending_indicator.style.display = 'none';
@@ -33,7 +32,7 @@ replyPreviewContainer.style.display = 'none';
         3. file data being sent 
         4. type of the file being sent
 */
-let key = ''
+let key = '';
 let user_id = ''
 let fileData = ''
 let fileType = ''
@@ -55,25 +54,16 @@ document.addEventListener("visibilitychange" , () => {
 })
 
 if(!isCreate){
-    remove_create_room_area();
     key = JSON.parse(localStorage.getItem("roomKey")) || null
     if(key) {
         joinRoom()
     }
 }
 else{
-    // Only display the create room area if creating a room and after joining display the chat room elements and remove the create room elements
-    // refer to function joinRoom()
-    remove_chat_elements()
-    display_create_room_area()
-}
-
-function display_create_room_area(){
-    createRoomArea.style.display = 'block';
-}
-
-function remove_create_room_area(){
-    createRoomArea.style.display = 'none';
+    key = JSON.parse(localStorage.getItem('Key'))
+    if(key) {
+        joinRoom()
+    }
 }
 
 function remove_chat_elements(){
@@ -100,38 +90,6 @@ user.on('TakeUserId' , (userId) => {
 })
 
 
-
-// Function to generate the random key , 11 characters in length
-keyBtn.addEventListener('click' , (e) => {
-    key = ''
-    if(room_title.value === '' || room_title.value.length < 4){
-        alert("Room Title too short.")
-        return
-    }
-    else if(room_title.value.length > 15){
-        alert("Room Title too long.")
-        return
-    }
-    else if(max_connections.value > 8 || max_connections.value < 2){
-        alert("Invalid Connections , minimum 2 and maximum 8 members allowed.")
-        return
-    }
-    else if(isJoined){
-        alert("Seems like you're already joined in a room , Refresh the page to join another room.")
-        return
-    }
-    let chars = 'ABCDEFGHIJKL0123456789MNOPQRST@$&_UVWXYZ'
-    for(let i = 0 ; i<11 ; i++){
-        let index = Math.floor(Math.random()*chars.length)
-        key += chars[index]
-    }
-    console.log(key)
-    joinRoom()
-    displayRoomKey.innerText = key;
-    scrollToBottomWindow()
-})
-
-
 function joinRoom(){
     if(isJoined){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
@@ -140,9 +98,8 @@ function joinRoom(){
     else if(displayRoomKey.innerText === '' && key) {
         displayRoomKey.innerText = `Joined Room: ${key}`
     }
-    user.emit('joinRoom' , key , room_title.value , max_connections.value)
+    user.emit('joinRoom' , key , room_title , max_connections)
     user.emit('get_room_title')
-    remove_create_room_area()
     display_chat_elements()
     isJoined = true
 }
