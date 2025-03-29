@@ -42,7 +42,13 @@ function assignColors(colors){
     return Math.floor(Math.random()*colors.length)
 }
 
+setInterval(() => {
+    io.emit('Sustain_connection')
+    console.log('Revive call sent.')
+} , 45000)
+
 io.on('connection' , user => {
+
     io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles , room_max_connections)
     
     user.on('joinRoom' , (roomKey , room_title , max_connections) => {

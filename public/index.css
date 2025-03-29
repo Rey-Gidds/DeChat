@@ -32,7 +32,7 @@ label{
 /* Chat Box - Centered & Wider */
 #chatBox {
     width: 97%;
-    height: 550px;
+    height: 450px;
     overflow-y: auto;  /* Enables vertical scrolling */
     overflow-x: hidden; /* Prevents horizontal scrolling */
     background: #333;
@@ -181,14 +181,15 @@ input {
     width: 97%;
     padding: 8px;
     background: #555;
-    font-size: 12px;
+    font-size: 10px;
     border-radius: 20px;
     max-width: 98%;
-    margin-top: 10px;
+    margin-top: 5px;
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
     height: fit-content;
+    line-height: 1.4;
 }
 
 .messageContent{
@@ -204,6 +205,7 @@ input {
     justify-content: space-between;
     align-items: center;
     height: fit-content;
+    line-height: 1.4;
 }
 
 .msgBtnContainer{
@@ -240,9 +242,6 @@ input {
     border-radius: 10px;
     margin-bottom: 4px;
 }
-
-
-
 
 .cancelReplyBtn{
     align-self: flex-start;
@@ -424,6 +423,7 @@ input {
     .sendArea {
         width: 98%;
         padding: 10px;
+        margin-top: 0px;
     }
 
     #message {

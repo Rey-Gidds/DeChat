@@ -2,13 +2,13 @@ const CACHE_NAME = 'doors-cache-v1';
 const ASSETS_TO_CACHE = [
   '/', // landing page
   '/index.html',
+  '/doors.html',
   '/doors.css',
   '/index.css',
   '/doors.js',
   '/chat_room.js',
   '/about.html',
   '/about_page.css',
-  '/favicon.ico',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png'

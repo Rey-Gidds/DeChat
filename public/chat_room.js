@@ -1,4 +1,4 @@
-const user = io()
+const user = io('https://dechat-o5h4.onrender.com')
 const sendbtn = document.getElementById('sendbtn')
 const room_title = document.getElementById('room_title')
 const keyBtn = document.getElementById('createKey')
@@ -156,9 +156,9 @@ fileInput.addEventListener('change' , () => {
     isFile = true
     let file = fileInput.files[0]
     let fileSize = (file.size/1024)
-    replyPreviewContainer.style.display = 'flex';
     imageContainer.style.display = 'flex';
     if(fileSize > 500){
+        replyPreviewContainer.style.display = 'flex';
         replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=clearReplyPreview()><i class="fa-solid fa-xmark"></i></button>`
         cancelImg()
         return
@@ -167,7 +167,6 @@ fileInput.addEventListener('change' , () => {
         let reader = new FileReader()
         reader.readAsDataURL(file)
         reader.onload = () => {
-
             imageContainer.innerHTML = `<img src='${reader.result}' />
             <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
             fileData = reader.result
@@ -176,6 +175,7 @@ fileInput.addEventListener('change' , () => {
         }
     }
     else{
+        replyPreviewContainer.style.display = 'flex';
         replyPreviewContainer.innerHTML = `We only support IMAGES for now. <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
         cancelImg()
     }
@@ -266,8 +266,9 @@ sendbtn.addEventListener('click' , (e) => {
         user.emit('sendFile' , fileData , fileType)
         image_sending_indicator.style.display = 'flex';
         image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
-        console.log('sending the file... ' , fileData ,fileType)
-        cancelImg()
+        console.log('sending the file... ')
+        clearReplyPreview();
+        cancelImg();
         return
     }
     else if(message.value.trim() === ''){
@@ -331,7 +332,7 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
 });
 
 user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
-    clearImageSendingIndicator();
+    
     let typingBubble = document.getElementById('typingBalls')
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
@@ -344,6 +345,8 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
     
 
     if(sender == user_id){
+        clearImageSendingIndicator();
+        cancelImg();
         msgContainer.style.borderRadius = '20px 20px 2px 20px'
         msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-end'
@@ -585,6 +588,7 @@ function cancelEdit(){
     replyPreviewContainer.style.display = 'none';
     message.value = ''
     msg_to_edit_index = null
+    clearReplyPreview();
 }
 
 
