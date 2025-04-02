@@ -1,4 +1,4 @@
-const user = io()
+const user = io('https://dechat-o5h4.onrender.com')
 const sendbtn = document.getElementById('sendbtn')
 const room_title = JSON.parse(localStorage.getItem('room_title'))
 const keyBtn = document.getElementById('createKey')
