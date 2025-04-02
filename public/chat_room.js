@@ -22,6 +22,7 @@ image_sending_indicator.style.display = 'none';
 imageContainer.style.display = 'none';
 replyPreviewContainer.style.display = 'none';
 loading_container.style.display = 'flex';
+remove_chat_elements();
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -51,7 +52,6 @@ let count = 0
 
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
-        remove_chat_elements();
         user.connect()
     }
 })
