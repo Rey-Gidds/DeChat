@@ -7,6 +7,7 @@ const leaveSound = new Audio('newJoin1.wav')
 const delSound = new Audio('Remove_Msg.flac')
 const fileInput = document.getElementById('fileInput')
 let image_sending_indicator = document.getElementById('sending-indicator')
+let loading_container = document.getElementById('loading_container')
 let chatBox = document.getElementById('chatBox')
 let display_room_title = document.getElementById('display_room_title')
 let replyPreviewContainer = document.getElementById('replyPreviewContainer')
@@ -17,9 +18,7 @@ let displayRoomKey = document.getElementById('displayRoomKey')
 let max_connections = JSON.parse(localStorage.getItem('max_connections'));
 let room_header = document.getElementById('room_header')
 
-image_sending_indicator.style.display = 'none';
-imageContainer.style.display = 'none';
-replyPreviewContainer.style.display = 'none';
+
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -49,6 +48,11 @@ let count = 0
 
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
+        image_sending_indicator.style.display = 'none';
+        imageContainer.style.display = 'none';
+        replyPreviewContainer.style.display = 'none';
+        loading_container.style.display = 'flex';
+        remove_chat_elements()
         user.connect()
     }
 })
@@ -100,13 +104,14 @@ function joinRoom(){
     }
     user.emit('joinRoom' , key , room_title , max_connections)
     user.emit('get_room_title')
-    display_chat_elements()
     isJoined = true
 }
 
 user.on('take_room_title' , (room_title) => {
-    display_room_title.style.display = 'block'
-    display_room_title.textContent = room_title
+    loading_container.style.display = 'none';
+    display_room_title.style.display = 'block';
+    display_room_title.textContent = room_title;
+    display_chat_elements();
 })
 
 fileInput.addEventListener('change' , () => {
