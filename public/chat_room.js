@@ -22,7 +22,9 @@ image_sending_indicator.style.display = 'none';
 imageContainer.style.display = 'none';
 replyPreviewContainer.style.display = 'none';
 loading_container.style.display = 'flex';
-remove_chat_elements();
+chatBox.style.display = 'none';
+room_header.style.display = 'none';
+document.querySelector('.sendArea').style.display = 'none';
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -75,7 +77,6 @@ function remove_chat_elements(){
     display_room_title.style.display = 'none';
     document.querySelector('.sendArea').style.display = 'none';
     memberColorBalls.style.display = 'none';
-    console.log('Removing the elements.');
 }
 
 function display_chat_elements(){
@@ -99,9 +100,6 @@ function joinRoom(){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
     }
-    else if(displayRoomKey.innerText === '' && key) {
-        displayRoomKey.innerText = `Joined Room: ${key}`
-    }
     user.emit('joinRoom' , key , room_title , max_connections)
     user.emit('get_room_title')
     isJoined = true
@@ -111,6 +109,7 @@ user.on('take_room_title' , (room_title) => {
     loading_container.style.display = 'none';
     display_room_title.style.display = 'block';
     display_room_title.textContent = room_title;
+    displayRoomKey.innerText = `Joined Room: ${key}`
     display_chat_elements();
 })
 
