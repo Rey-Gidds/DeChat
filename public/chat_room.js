@@ -18,7 +18,11 @@ let displayRoomKey = document.getElementById('displayRoomKey')
 let max_connections = JSON.parse(localStorage.getItem('max_connections'));
 let room_header = document.getElementById('room_header')
 
-
+image_sending_indicator.style.display = 'none';
+imageContainer.style.display = 'none';
+replyPreviewContainer.style.display = 'none';
+loading_container.style.display = 'flex';
+remove_chat_elements()
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -48,11 +52,6 @@ let count = 0
 
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
-        image_sending_indicator.style.display = 'none';
-        imageContainer.style.display = 'none';
-        replyPreviewContainer.style.display = 'none';
-        loading_container.style.display = 'flex';
-        remove_chat_elements()
         user.connect()
     }
 })
@@ -60,13 +59,17 @@ document.addEventListener("visibilitychange" , () => {
 if(!isCreate){
     key = JSON.parse(localStorage.getItem("roomKey")) || null
     if(key) {
-        joinRoom()
+        setInterval(() => {
+            joinRoom()
+        }, 5000);
     }
 }
 else{
     key = JSON.parse(localStorage.getItem('Key'))
     if(key) {
-        joinRoom()
+        setInterval(() => {
+            joinRoom()
+        }, 5000);
     }
 }
 
