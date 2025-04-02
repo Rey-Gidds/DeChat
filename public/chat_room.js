@@ -1,4 +1,4 @@
-const user = io('https://dechat-o5h4.onrender.com')
+const user = io()
 const sendbtn = document.getElementById('sendbtn')
 const room_title = JSON.parse(localStorage.getItem('room_title'))
 const keyBtn = document.getElementById('createKey')
@@ -22,7 +22,6 @@ image_sending_indicator.style.display = 'none';
 imageContainer.style.display = 'none';
 replyPreviewContainer.style.display = 'none';
 loading_container.style.display = 'flex';
-remove_chat_elements()
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -52,6 +51,7 @@ let count = 0
 
 document.addEventListener("visibilitychange" , () => {
     if(document.visibilityState === "visible"){
+        remove_chat_elements();
         user.connect()
     }
 })
@@ -59,17 +59,13 @@ document.addEventListener("visibilitychange" , () => {
 if(!isCreate){
     key = JSON.parse(localStorage.getItem("roomKey")) || null
     if(key) {
-        setInterval(() => {
-            joinRoom()
-        }, 5000);
+        joinRoom()
     }
 }
 else{
     key = JSON.parse(localStorage.getItem('Key'))
     if(key) {
-        setInterval(() => {
-            joinRoom()
-        }, 5000);
+        joinRoom()
     }
 }
 
@@ -79,6 +75,7 @@ function remove_chat_elements(){
     display_room_title.style.display = 'none';
     document.querySelector('.sendArea').style.display = 'none';
     memberColorBalls.style.display = 'none';
+    console.log('Removing the elements.');
 }
 
 function display_chat_elements(){
