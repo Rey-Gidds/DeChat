@@ -22,9 +22,8 @@ image_sending_indicator.style.display = 'none';
 imageContainer.style.display = 'none';
 replyPreviewContainer.style.display = 'none';
 loading_container.style.display = 'flex';
-chatBox.style.display = 'none';
-room_header.style.display = 'none';
-document.querySelector('.sendArea').style.display = 'none';
+
+remove_chat_elements();
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -100,6 +99,8 @@ function joinRoom(){
         alert("Seems like you're already joined in a room , Refresh the page to join another room.")
         return
     }
+    remove_chat_elements();
+    loading_container.style.display = 'flex';
     user.emit('joinRoom' , key , room_title , max_connections)
     user.emit('get_room_title')
     isJoined = true
