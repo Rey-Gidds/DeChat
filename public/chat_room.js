@@ -18,12 +18,13 @@ let displayRoomKey = document.getElementById('displayRoomKey')
 let max_connections = JSON.parse(localStorage.getItem('max_connections'));
 let room_header = document.getElementById('room_header')
 
-image_sending_indicator.style.display = 'none';
-imageContainer.style.display = 'none';
-replyPreviewContainer.style.display = 'none';
-loading_container.style.display = 'flex';
 
+loading_container.style.display = 'flex';
+clearImagePreview();
 remove_chat_elements();
+clearImageSendingIndicator();
+clearReplyPreview();
+
 
 // Varibles to store critical information at the frontend 
 /*  Note:
@@ -36,7 +37,7 @@ remove_chat_elements();
         3. file data being sent 
         4. type of the file being sent
 */
-let key = '';
+let key = ''
 let user_id = ''
 let fileData = ''
 let fileType = ''
@@ -51,22 +52,23 @@ let msg_to_edit_index = null
 let count = 0
 
 
-document.addEventListener("visibilitychange" , () => {
-    if(document.visibilityState === "visible"){
-        user.connect()
-    }
-})
 
 if(!isCreate){
     key = JSON.parse(localStorage.getItem("roomKey")) || null
     if(key) {
         joinRoom()
     }
+    else{
+        room_header.innerHTML = 'Unable to connect to the room :( , <a href="doors.html"> Back to Doors </a>'
+    }
 }
 else{
-    key = JSON.parse(localStorage.getItem('Key'))
+    key = JSON.parse(localStorage.getItem('Key')) || null
     if(key) {
         joinRoom()
+    }
+    else{
+        room_header.innerHTML = 'Unable to connect to the room :( , <a href="doors.html"> Back to Doors </a>'
     }
 }
 
@@ -90,7 +92,6 @@ user.on('TakeUserId' , (userId) => {
     if(user_id == ''){
         user_id = userId
     }
-    console.log('User ID: ' , user_id)
 })
 
 
@@ -114,32 +115,31 @@ user.on('take_room_title' , (room_title) => {
     display_chat_elements();
 })
 
+async function compressImage(image) {
+    const parameters = {
+        maxSizeMB: 0.5,
+        useWebWorker: true
+    };
+
+    const compressedFile = await imageCompression(image , parameters);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(image);
+    reader.onload = () => {
+        imageContainer.innerHTML = `<img src='${reader.result}' />
+        <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
+        fileData = reader.result
+        fileType = compressedFile.type
+        scrollToBottomWindow()
+    }
+}
+
 fileInput.addEventListener('change' , () => {
     isFile = true
     let file = fileInput.files[0]
-    let fileSize = (file.size/1024)
     imageContainer.style.display = 'flex';
-    if(fileSize > 500){
-        replyPreviewContainer.style.display = 'flex';
-        replyPreviewContainer.innerHTML = ` Too large file (size > 500 KB). <button class='cancelReplyBtn' onclick=clearReplyPreview()><i class="fa-solid fa-xmark"></i></button>`
-        cancelImg()
-        return
-    }
     if(file && file.type.startsWith("image/")){
-        let reader = new FileReader()
-        reader.readAsDataURL(file)
-        reader.onload = () => {
-            imageContainer.innerHTML = `<img src='${reader.result}' />
-            <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
-            fileData = reader.result
-            fileType = file.type
-            scrollToBottomWindow()
-        }
-    }
-    else{
-        replyPreviewContainer.style.display = 'flex';
-        replyPreviewContainer.innerHTML = `We only support IMAGES for now. <button class='cancelReplyBtn' onclick=cancelReply()><i class="fa-solid fa-xmark"></i></button>`
-        cancelImg()
+        compressImage(file);
     }
 })
 
@@ -279,6 +279,7 @@ user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_
     msgContainer.className = 'msgBubble';
     msgContainer.style.color = userColor;
     msgContainer.id = msg_index;
+
     render_msg({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor,msgContainer,false)
 
     chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
@@ -518,6 +519,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
 
 chatBox.addEventListener('click' , (e) => {
     let button = e.target;
+    console.log('button: ' , button);
     if(button.className === 'replyBtn'){
         let msg = button.getAttribute('data-message');
         let color = button.getAttribute('data-color');

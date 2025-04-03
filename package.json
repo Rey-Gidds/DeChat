@@ -9,6 +9,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "browser-image-compression": "^2.0.2",
     "express": "^4.21.2",
     "socket.io": "^4.8.1"
   }
