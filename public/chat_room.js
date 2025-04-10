@@ -257,8 +257,9 @@ function stringify_message(value){
     which include: reply() , editMsg() in which the msg with new lines cannot be passed directly as 
     an argument 
 */
+    
     let dummy_value = value;
-    return JSON.stringify(dummy_value)
+    return JSON.stringify(dummy_value);
 }
 
 let scrollTimeout;
@@ -274,7 +275,6 @@ chatBox.addEventListener('scroll' , () => {
 
 
 user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor) => {
-
     let msgContainer = document.createElement('div'); // Main container
     msgContainer.className = 'msgBubble';
     msgContainer.style.color = userColor;
@@ -488,7 +488,8 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         }
         new_msg.innerHTML += `
             <div class='msgBtnContainer'>
-                <button class='EditBtn' data-value='${msg_index}' onclick='editMsg(${msg_index}, ${stringify_message(msg)} , "${userColor}")'>
+                <button class='EditBtn' data-value='${msg_index}' data-msg=${stringify_message(msg)} 
+                data-color=${userColor} >
                     <i class="fa-solid fa-pencil"></i>
                 </button>
                 <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
@@ -503,7 +504,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
-            <button class='replyBtn' data-message=${stringify_message(msg)} data-color="${userColor}" >
+            <button class='replyBtn' data-message=${stringify_message(msg)} data-color="${userColor}">
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -517,13 +518,21 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
     return
 }
 
+
 chatBox.addEventListener('click' , (e) => {
+    e.preventDefault();
     let button = e.target;
-    console.log('button: ' , button);
     if(button.className === 'replyBtn'){
         let msg = button.getAttribute('data-message');
         let color = button.getAttribute('data-color');
         reply(msg , color);
+        return;
+    }
+    else if(button.className === 'EditBtn'){
+        let msg_index = button.getAttribute('data-value');
+        let rmsg = button.getAttribute('data-msg');
+        let rcolor = button.getAttribute('data-color');
+        editMsg(msg_index , rmsg , rcolor);
         return;
     }
     return;
