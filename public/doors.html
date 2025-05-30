@@ -38,15 +38,49 @@
     <script src="doors.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function () {
-            navigator.serviceWorker.register('/service-worker.js')
-                .then(function (registration) {
-                console.log('ServiceWorker registered with scope:', registration.scope);
-                }, function (err) {
-                console.log('ServiceWorker registration failed:', err);
-                });
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                .then(registration => {
+                    // Check for updates
+                    registration.onupdatefound = () => {
+                    const newWorker = registration.installing;
+                    newWorker.onstatechange = () => {
+                        if (newWorker.state === 'installed') {
+                            if (navigator.serviceWorker.controller) {
+                                // New update available
+                                showUpdateNotification(newWorker);
+                            }
+                        }
+                    };
+                };
+            });
+        });
+        }
+
+        function showUpdateNotification(worker) {
+            const updateBanner = document.createElement('div');
+            updateBanner.style = `
+                position: fixed;
+                bottom: 0;
+                width: 100%;
+                background: #222;
+                color: white;
+                text-align: center;
+                padding: 10px;
+                z-index: 9999;
+            `;
+            updateBanner.innerHTML = `
+                Kindly Update for better experience 🥂<button id="reload">Refresh</button>
+            `;
+
+            document.body.appendChild(updateBanner);
+
+            document.getElementById('reload').addEventListener('click', () => {
+                worker.postMessage({ action: 'skipWaiting' });
             });
         }
+
+
     </script>
 </body>
 </html>

@@ -44,6 +44,12 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
+self.addEventListener('message', event => {
+  if (event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
+});
+
 // Serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   event.respondWith(
