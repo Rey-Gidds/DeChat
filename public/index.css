@@ -11,6 +11,10 @@ body {
     overflow-y: auto;
 }
 
+.replyBtn i, .EditBtn i, .DelBtns i {
+    pointer-events: none;
+}
+
 .loading-container {
     position: absolute;
     margin: auto;

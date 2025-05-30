@@ -330,7 +330,7 @@ user.on('receiveFile' , (file_object) => {
         msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-end'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
-        <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
+        <button class='DelBtns' data-value='${msg_index}'>
             <i class="fa-solid fa-trash"></i>
         </button>`
     }
@@ -524,7 +524,7 @@ function render_msg(msg , userColor , sender , msg_index , flag_file , flag_repl
                 data-color=${userColor} >
                     <i class="fa-solid fa-pencil"></i>
                 </button>
-                <button class='DelBtns' data-value='${msg_index}' onclick='removeMsg(${msg_index})'>
+                <button class='DelBtns' data-value='${msg_index}'>
                     <i class="fa-solid fa-trash"></i>
                 </button>
             </div>
@@ -552,19 +552,27 @@ function render_msg(msg , userColor , sender , msg_index , flag_file , flag_repl
 
 
 chatBox.addEventListener('click' , (e) => {
-    e.preventDefault();
-    let button = e.target;
-    if(button.className === 'replyBtn'){
-        let msg = button.getAttribute('data-message');
-        let color = button.getAttribute('data-color');
-        replyTextPreview(msg , color);
+    const replyBtn = e.target.closest('.replyBtn');
+    const editBtn = e.target.closest('.EditBtn');
+    const delBtn = e.target.closest('.DelBtns');
+    if (replyBtn) {
+        let msg = replyBtn.getAttribute('data-message');
+        let color = replyBtn.getAttribute('data-color');
+        replyTextPreview(msg, color);
         return;
     }
-    else if(button.className === 'EditBtn'){
-        let msg_index = button.getAttribute('data-value');
-        let rmsg = button.getAttribute('data-message');
-        let rcolor = button.getAttribute('data-color');
-        editMsg(msg_index , rmsg , rcolor);
+    
+    if (editBtn) {
+        let msg_index = editBtn.getAttribute('data-value');
+        let rmsg = editBtn.getAttribute('data-message');
+        let rcolor = editBtn.getAttribute('data-color');
+        editMsg(msg_index, rmsg, rcolor);
+        return;
+    }
+    
+    if (delBtn) {
+        let msg_index = delBtn.getAttribute('data-value');
+        removeMsg(msg_index);
         return;
     }
     return;
