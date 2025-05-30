@@ -2,6 +2,16 @@ const user = io('https://dechat-o5h4.onrender.com');
 const createRoomBtn = document.getElementById("createRoom");
 const active_rooms = document.getElementById("active_rooms");
 
+user.on('userDisconnected' , (roomKey , active_users , max_connections , room_title) => {
+    let room_block = document.getElementById(roomKey)
+    
+    room_block.innerHTML = `
+        <h2 class="roomTitle">${room_title}</h2>
+        <h3>${roomKey}</h3>
+        <div class="members">${active_users} / ${max_connections}</div>
+        <button class="joinBtn" onclick='joinCall("${roomKey}", false)'>Join Room</button>
+    `;
+})
 
 user.on('Sustain_connection' , () => {
     console.log('Reviving Connection.');
@@ -44,15 +54,10 @@ function displayRooms(rooms , room_titles , room_max_connections) {
         roomBlock.className = "room_block";
         roomBlock.id = `${room}`;
         
-        // Show capacity status color based on room fullness
-        let statusColor;
-        if(room_length < max_connections) statusColor = 'var(--success-color)';
-        else statusColor = 'var(--danger-color)'
-        
         roomBlock.innerHTML = `
             <h2 class="roomTitle">${room_titles[room]}</h2>
             <h3>${room}</h3>
-            <div class="members" style="--status-color: ${statusColor}">${room_length} / ${max_connections}</div>
+            <div class="members">${room_length} / ${max_connections}</div>
             <button class="joinBtn" onclick='joinCall("${room}", false)'>Join Room</button>
         `;
         active_rooms.appendChild(roomBlock);

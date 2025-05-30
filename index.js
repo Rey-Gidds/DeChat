@@ -1,5 +1,5 @@
 const express = require('express');
-const path = require('path')
+const path = require('path');
 const app = express();
 const http = require('http');
 const server = http.createServer(app);
@@ -15,11 +15,16 @@ const io = new Server(server , {
 const rooms = {}
 const colorPool = {}
 const assignedColors = {}
-const msg_index = {}
-const isBubble = {}
-const isReplying = {}
-const room_titles = {}
+const msg_index = {} // maintians the index of the latest messages in a room
+const isBubble = {} // maintains the state of the active bubble per room Eg: stores the roomkey as key and boolean value as value.
+const isReplying = {} // maintains the replying state of user per room i.e. stores the boolean values of whether the user is replying to a particular message or not and if the user is replying to a file or not.
+const room_titles = {} 
 const room_max_connections = {}
+// IS FILE FLAGS
+const YES_FILE = true
+const NO_FILE = false
+// IS REPLYING TO A MESSAGE FLAG
+const FLAG = true
 
 
 // To increase the size to transfer files , easily
@@ -36,33 +41,96 @@ app.get('/index.html', (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-
+// Randomly assigns the color from the color pool
 function assignColors(colors){
     return Math.floor(Math.random()*colors.length)
 }
 
+// consrtucts a message object including the message information to send to the room and the user.
+function constructMsgObject(senderId , msg , msg_i , userColor , file_flag , flag , rmsg , rcolor){
+    let msg_object = {
+        sender: senderId,
+        msg: msg,
+        msg_index: msg_i,
+        userColor : userColor,
+        file_flag: file_flag,
+        flag : flag,
+        rmsg : rmsg,
+        rcolor: rcolor
+    }
+    return msg_object;
+}
+
+// constructs a file object with necessary file information to pass to the room
+function constructFileObject(senderId , userColor , msg_index , file_data , file_type){
+    let file_object = {
+        sender: senderId,
+        userColor : userColor,
+        msg_index: msg_index,
+        file_data: file_data,
+        file_type: file_type
+    }
+    return file_object
+}
+
+// Handles the disconnection when a user leaves a room
+function handleDisconnections(userId , userColor , roomKey){
+    io.to(roomKey).emit('userDisconnected' , roomKey , assignedColors[roomKey] , room_max_connections[roomKey] , room_titles[roomKey])
+    io.to(roomKey).emit('removeMemberColorBall' , userColor)
+    io.to(roomKey).emit('removetypingBall' , userColor)
+
+    assignedColors[roomKey] = assignedColors[roomKey].filter((assignedColor) => { return assignedColor != userColor })
+    colorPool[roomKey].push(userColor)
+
+    delete rooms[roomKey][userId]
+}
+
+// Destroys the empty rooms.
+function destroyEmptyRoom(roomKey){
+    delete colorPool[roomKey]
+    delete assignedColors[roomKey]
+    delete rooms[roomKey]
+    delete isBubble[roomKey]
+    delete msg_index[roomKey]
+    delete isReplying[roomKey]
+    delete room_titles[roomKey]
+    delete room_max_connections[roomKey]
+    io.emit('destroyRoomBlock' , roomKey)
+}
+
+function createAndInitializeRoom(roomKey , room_title , max_connections){
+    rooms[roomKey] = {}
+    room_titles[roomKey] = room_title
+    room_max_connections[roomKey] = max_connections
+    colorPool[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
+    assignedColors[roomKey] = []
+    msg_index[roomKey] = 0
+    isBubble[roomKey] = false
+    isReplying[roomKey] = {}   
+}
+
+function reachedMaxConnections(roomKey){
+    return Object.keys(rooms[roomKey]).length >= room_max_connections[roomKey]
+}
+
+// Heart beat connections from the backend to keep the connection alive with the frontend and to prevent the render free tier server from spinning down
 setInterval(() => {
     io.emit('Sustain_connection')
     console.log('Revive call sent.')
 } , 45000)
 
+
+// Handles the new connections and disconnections.
 io.on('connection' , user => {
 
     io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles , room_max_connections)
     
     user.on('joinRoom' , (roomKey , room_title , max_connections) => {
         if(!rooms[roomKey]){
-            rooms[roomKey] = {}
-            room_titles[roomKey] = room_title
-            room_max_connections[roomKey] = max_connections
-            colorPool[roomKey] = ['#00AFFF' , '#F5F5F0' , '#EE6666' , '#FFD700' , '#F2E68F' , '#00FFFF' , '#F87AA3' , '#C5F5CB']
-            assignedColors[roomKey] = []
-            msg_index[roomKey] = 0
-            isBubble[roomKey] = false
-            isReplying[roomKey] = {}      
+            // information related to the rooms can be stored in one rooms object , no need to make all these different objects , makes the code bloated.
+            createAndInitializeRoom(roomKey , room_title , max_connections)
         }
-        else if(Object.keys(rooms[roomKey]).length >= room_max_connections[roomKey]) {
+        else if(reachedMaxConnections(roomKey)) {
             io.to(user.id).emit('RoomLimitReached' , 'Cannot Connect  , Room limit reached :(')
             return
         }
@@ -76,45 +144,36 @@ io.on('connection' , user => {
 
         io.to(user.id).emit('TakeUserId' , user.id)
 
-        isReplying[roomKey][user.id] = [false , false , '' , '']
+        isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' , '']
 
-        let index = assignColors(colorPool[roomKey])
+        let color = assignColors(colorPool[roomKey])
         
-        rooms[roomKey][user.id] = colorPool[roomKey][index]
-
-
-        if(index === colorPool[roomKey].length - 1){
-            assignedColors[roomKey].push(colorPool[roomKey].pop())
-        }
-        else{
-            let temp = colorPool[roomKey][index]
-            colorPool[roomKey][index] = colorPool[roomKey][colorPool[roomKey].length - 1]
-            colorPool[roomKey][colorPool[roomKey].length - 1] = temp
-            assignedColors[roomKey].push(colorPool[roomKey].pop())
-        }
+        rooms[roomKey][user.id] = colorPool[roomKey][color]
+        assignedColors[roomKey].push(colorPool[roomKey][color])
+        colorPool[roomKey].splice(color , 1)
         
-        console.log(assignedColors)
+        console.log('Assigned Colors: ' , assignedColors)
 
         io.to(roomKey).emit('addMemberBall' , assignedColors[roomKey])
 
-        console.log(colorPool , colorPool[roomKey].length)
+        console.log('Color pool: ' , colorPool , colorPool[roomKey].length)
         
-        
-        console.log('A Dechatter just Slid in.')
-
         user.on('editMsg' , (msg_index_for_edit , msg) => {
             let userColor = rooms[roomKey][user.id]
             let replying_flag_file = isReplying[roomKey][user.id][0]
             let replying_flag = isReplying[roomKey][user.id][1]
             let rmsg = isReplying[roomKey][user.id][2]
             let rcolor = isReplying[roomKey][user.id][3]
-            io.to(roomKey).emit('msgEdited' , { msg , userColor } , user.id , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor)
+            let msg_object = constructMsgObject(user.id , msg , msg_index_for_edit , userColor , replying_flag_file , replying_flag , rmsg , rcolor)
+            io.to(roomKey).emit('msgEdited' , msg_object)
         })
 
         user.on('sendFile' , (file_data , file_type) => {
             let userColor = rooms[roomKey][user.id]
+            let msg_i = msg_index[roomKey]
+            let file_object = constructFileObject(user.id , userColor , msg_i , file_data , file_type)
             msg_index[roomKey]++
-            io.to(roomKey).emit('receiveFile' , user.id , file_data , file_type , userColor , msg_index[roomKey])
+            io.to(roomKey).emit('receiveFile' , file_object)
         })
 
         user.on('typing' , () => {
@@ -139,9 +198,10 @@ io.on('connection' , user => {
             let flag = isReplying[roomKey][user.id][1]
             let rmsg = isReplying[roomKey][user.id][2]
             let rcolor = isReplying[roomKey][user.id][3]
-            console.log('Sender: ' , user.id)
+            let msg_i = msg_index[roomKey]
+            msg_object = constructMsgObject(user.id , msg , msg_i , userColor , file_flag , flag , rmsg , rcolor)
             msg_index[roomKey]++
-            io.to(roomKey).emit('message' , { msg , userColor } , user.id , msg_index[roomKey] ,file_flag, flag , rmsg , rcolor)
+            io.to(roomKey).emit('message' , msg_object)
         })
 
         user.on('deleteMsg' , (msgToDel) => {
@@ -153,44 +213,19 @@ io.on('connection' , user => {
             isReplying[roomKey][user.id][1] = flag
             isReplying[roomKey][user.id][2] = rmsg
             isReplying[roomKey][user.id][3] = rcolor
-            console.log(isReplying[roomKey])
+            console.log('is Replying: ' , isReplying[roomKey])
         })
 
         user.on('disconnect' , () => {
-
-            console.log('User Disconnected.')
-
             let userColor = rooms[roomKey][user.id]
-
-            io.to(roomKey).emit('userDisconnected')
-
-            io.to(roomKey).emit('removeMemberColorBall' , userColor)
-            io.to(roomKey).emit('removetypingBall' , userColor)
-
-            assignedColors[roomKey] = assignedColors[roomKey].filter((assignedColor) => { return assignedColor != userColor })
-
-            console.log('Disconnected: ' , assignedColors[roomKey])
-
-            colorPool[roomKey].push(userColor)
-
-            delete rooms[roomKey][user.id]
+            handleDisconnections(user.id , userColor , roomKey)
 
             if(Object.keys(rooms[roomKey]).length === 0 || assignedColors[roomKey].length === 0){
-                delete colorPool[roomKey]
-                delete assignedColors[roomKey]
-                delete rooms[roomKey]
-                delete isBubble[roomKey]
-                delete msg_index[roomKey]
-                delete isReplying[roomKey]
-                delete room_titles[roomKey]
-                delete room_max_connections[roomKey]
-                io.emit('destroyRoomBlock' , roomKey)
+                destroyEmptyRoom(roomKey)
             }
         })
     })
 })
-
-
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT , () => {

@@ -19,7 +19,6 @@ let max_connections = JSON.parse(localStorage.getItem('max_connections'));
 let room_header = document.getElementById('room_header')
 
 
-loading_container.style.display = 'flex';
 clearImagePreview();
 remove_chat_elements();
 clearImageSendingIndicator();
@@ -47,6 +46,9 @@ let isScrolling = false
 let notify = false
 let isFile = false
 let isReplying = false
+const YES_FILE = true
+const NO_FILE = false
+const FLAG = true
 let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
 let msg_to_edit_index = null
 let count = 0
@@ -88,6 +90,14 @@ function display_chat_elements(){
     memberColorBalls.style.display = 'flex';
 }
 
+function displayLoading(){
+    loading_container.style.display = 'flex';
+}
+
+function removeLoading(){
+    loading_container.style.display = 'none';
+}
+
 user.on('TakeUserId' , (userId) => {
     if(user_id == ''){
         user_id = userId
@@ -97,21 +107,21 @@ user.on('TakeUserId' , (userId) => {
 
 function joinRoom(){
     if(isJoined){
-        alert("Seems like you're already joined in a room , Refresh the page to join another room.")
-        return
+        alert("Seems like you're already joined in a room , Refresh the page to join another room.");
+        return;
     }
     remove_chat_elements();
-    loading_container.style.display = 'flex';
-    user.emit('joinRoom' , key , room_title , max_connections)
-    user.emit('get_room_title')
-    isJoined = true
+    displayLoading();
+    user.emit('joinRoom' , key , room_title , max_connections);
+    user.emit('get_room_title');
+    isJoined = true;
 }
 
 user.on('take_room_title' , (room_title) => {
-    loading_container.style.display = 'none';
+    removeLoading();
     display_room_title.style.display = 'block';
     display_room_title.textContent = room_title;
-    displayRoomKey.innerText = `Joined Room: ${key}`
+    displayRoomKey.innerText = `Joined Room: ${key}`;
     display_chat_elements();
 })
 
@@ -220,15 +230,10 @@ user.on('removetypingBall' , (userColor) => {
 
 
 sendbtn.addEventListener('click' , (e) => {
-    if(!isJoined){
-        alert("Seems like you're not joined in any room :(")
-        return
-    }
     if(isFile){
         user.emit('sendFile' , fileData , fileType)
         image_sending_indicator.style.display = 'flex';
         image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
-        console.log('sending the file... ')
         clearReplyPreview();
         cancelImg();
         return
@@ -254,7 +259,7 @@ function stringify_message(value){
     dummy value is taken to "not" directly stringify the original message value as the original value is
     passed to the backend and also to render msgs which should not be "stringified"
     hence the dummy value helps in passing the string as an argument in some functions in the program
-    which include: reply() , editMsg() in which the msg with new lines cannot be passed directly as 
+    which include: replyTextPreview() , editMsg() in which the msg with new lines cannot be passed directly as 
     an argument 
 */
     
@@ -273,30 +278,41 @@ chatBox.addEventListener('scroll' , () => {
     } , 800)
 })
 
+// { msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor
 
-user.on('message', ({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor) => {
+user.on('message', (msg_object) => {
     let msgContainer = document.createElement('div'); // Main container
+    let msg = String(msg_object.msg)
+    let userColor = String(msg_object.userColor)
+    let sender = String(msg_object.sender)
+    let msg_index = parseInt(msg_object.msg_index)
+    let file_flag = msg_object.file_flag
+    let replying_flag = msg_object.flag
+    let rmsg = String(msg_object.rmsg)
+    let rcolor = String(msg_object.rcolor)
+    let NOT_EDITING = false
     msgContainer.className = 'msgBubble';
     msgContainer.style.color = userColor;
     msgContainer.id = msg_index;
 
-    render_msg({ msg, userColor }, sender, msg_index, file_flag , replying_flag , rmsg , rcolor,msgContainer,false)
+    render_msg(msg, userColor , sender, msg_index, file_flag , replying_flag , rmsg , rcolor, msgContainer , NOT_EDITING)
 
     chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
-
-    if (chatBox.contains(typingBubble)) {
-        chatBox.appendChild(typingBubble);
-    }
 
     if(!isScrolling){
         scrollToBottomChatBox()
     }
-
+    handleTypingBubble();
 });
 
-user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index) => {
+user.on('receiveFile' , (file_object) => {
+    let sender = String(file_object.sender)
+    let file_data = String(file_object.file_data)
+    let file_type = String(file_object.file_type)
+    let userColor = String(file_object.userColor)
+    let msg_index = parseInt(file_object.msg_index)
     
-    let typingBubble = document.getElementById('typingBalls')
+    
     let msgContainer = document.createElement('div') // Main container
     msgContainer.className = 'msgBubble'
     msgContainer.id = msg_index
@@ -323,7 +339,7 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
         msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-start'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
-        <button class='replyBtnImg' onclick='replyFile("${file_data}", "${userColor}")'>
+        <button class='replyBtnImg' onclick='replyFilePreview("${file_data}", "${userColor}")'>
             <i class="fa-solid fa-reply"></i>
         </button>`
         messageNotification()
@@ -332,11 +348,18 @@ user.on('receiveFile' , (sender , file_data , file_type , userColor , msg_index)
 
     msgContainer.appendChild(newMsg)
     chatBox.appendChild(msgContainer)
+
+    handleTypingBubble()
+    scrollToBottomChatBox()
+})
+
+function handleTypingBubble(){
+    let typingBubble = document.getElementById('typingBalls')
     if (chatBox.contains(typingBubble)) {
         chatBox.appendChild(typingBubble);
     }
-    scrollToBottomChatBox()
-})
+    return
+}
 
 
 function openImageWindow(data){
@@ -377,7 +400,7 @@ function scrollToBottomChatBox(){
     chatBox.scrollTo({top: chatBox.scrollHeight , behavior: "smooth"})
 }
 
-function replyFile(file_data , color){
+function replyFilePreview(file_data , color){
     isReplying = true
     replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
@@ -392,12 +415,12 @@ function replyFile(file_data , color){
     replyPreview.style.border = `3px dashed ${color}`
     replyPreview.style.borderRadius = '10px'
     replyPreviewContainer.appendChild(replyPreview)
-    user.emit('update_reply_flag' , true , true , file_data , color)
+    user.emit('update_reply_flag' , YES_FILE , FLAG , file_data , color)
     scrollToBottomWindow()
 }
 
 
-function reply(msg , color){
+function replyTextPreview(msg , color){
     isReplying = true
     replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
@@ -410,7 +433,7 @@ function reply(msg , color){
     replyPreview.style.color = color
     replyPreviewContainer.appendChild(replyPreview)
     console.log('before sending to backend: ' , msg , color)
-    user.emit('update_reply_flag' , false , true , msg , color)
+    user.emit('update_reply_flag' , NO_FILE , FLAG , msg , color)
     scrollToBottomWindow()
     return;
 }
@@ -418,16 +441,25 @@ function reply(msg , color){
 function cancelReply(){
     isReplying = false
     clearReplyPreview();
-    user.emit('update_reply_flag' , false , false , '' , '')
+    user.emit('update_reply_flag' , NO_FILE , !FLAG , '' , '')
 }
 
 
-user.on('msgEdited' , ({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor) => {
+user.on('msgEdited' , (msg_object) => {
+    let msg = String(msg_object.msg)
+    let userColor = String(msg_object.userColor)
+    let sender = String(msg_object.sender)
+    let msg_index = parseInt(msg_object.msg_index)
+    let replying_flag_file = msg_object.file_flag
+    let replying_flag = msg_object.flag
+    let rmsg = String(msg_object.rmsg)
+    let rcolor = String(msg_object.rcolor)
+    let YES_EDITING = true
+    let editedMsgContainer = document.getElementById(`content_${msg_index}`)
     
-    let editedMsgContainer = document.getElementById(`content_${msg_index_for_edit}`)
     editedMsgContainer.innerHTML = ''
 
-    render_msg({ msg , userColor } , sender , msg_index_for_edit , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer , true)
+    render_msg(msg , userColor  , sender , msg_index , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer , YES_EDITING)
 })
 
 function messageNotification(){
@@ -439,7 +471,7 @@ function messageNotification(){
     })
 }
 
-function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer , editing_msg){
+function render_msg(msg , userColor , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer , editing_msg){
 
     if(flag_file){
         let replyMsg = document.createElement('div');
@@ -447,7 +479,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}")/>
-            <button class='replyBtnImg' onclick='replyFile("${rmsg}" , "${rcolor}")'>
+            <button class='replyBtnImg' onclick='replyFilePreview("${rmsg}" , "${rcolor}")'>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -488,7 +520,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
         }
         new_msg.innerHTML += `
             <div class='msgBtnContainer'>
-                <button class='EditBtn' data-value='${msg_index}' data-msg=${stringify_message(msg)} 
+                <button class='EditBtn' data-value='${msg_index}' data-message = ${stringify_message(msg)} 
                 data-color=${userColor} >
                     <i class="fa-solid fa-pencil"></i>
                 </button>
@@ -504,7 +536,7 @@ function render_msg({msg , userColor} , sender , msg_index , flag_file , flag_re
             msgContainer.style.alignSelf = 'flex-start'
         }
         new_msg.innerHTML += `
-            <button class='replyBtn' data-message=${stringify_message(msg)} data-color="${userColor}">
+            <button class='replyBtn' data-message = ${stringify_message(msg)} data-color="${userColor}">
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
@@ -525,12 +557,12 @@ chatBox.addEventListener('click' , (e) => {
     if(button.className === 'replyBtn'){
         let msg = button.getAttribute('data-message');
         let color = button.getAttribute('data-color');
-        reply(msg , color);
+        replyTextPreview(msg , color);
         return;
     }
     else if(button.className === 'EditBtn'){
         let msg_index = button.getAttribute('data-value');
-        let rmsg = button.getAttribute('data-msg');
+        let rmsg = button.getAttribute('data-message');
         let rcolor = button.getAttribute('data-color');
         editMsg(msg_index , rmsg , rcolor);
         return;
@@ -563,7 +595,6 @@ function cancelEdit(){
     msg_to_edit_index = null
     clearReplyPreview();
 }
-
 
 function removeMsg(del_index){
     delSound.play()
@@ -602,6 +633,7 @@ user.on('removeMemberColorBall' , (color) => {
 })
 
 user.on('RoomLimitReached' , (msg) => {
+    removeLoading();
     displayRoomKey.innerText = msg
     let back_to_doors = document.createElement('a')
     back_to_doors.href = 'doors.html'
