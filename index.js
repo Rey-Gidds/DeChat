@@ -16,6 +16,7 @@ const io = new Server(server , {
     pingInterval: 1000
 })
 
+const DB_URL = process.env.DB_URL
 const dbKey = process.env.DB_KEY;
 const rooms = {}
 const colorPool = {}
@@ -31,7 +32,7 @@ const NO_FILE = false
 // IS REPLYING TO A MESSAGE FLAG
 const FLAG = true
 
-mongoose.connect('mongodb://localhost:27017/DoorsDB');
+mongoose.connect(DB_URL);
 
 const UserSchema = new mongoose.Schema(
     {
