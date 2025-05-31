@@ -92,7 +92,6 @@ app.post('/login' , async (req , res) => {
 
 app.post('/signup' , async (req , res) => {
     const {username , email , password} = req.body;
-    console.log(req.body)
     const userExists = await User.findOne({email});
     if(userExists){
         return res.json({message: 'User already logged in , no need to sign-up.'});
