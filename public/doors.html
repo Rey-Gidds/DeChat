@@ -13,22 +13,21 @@
     <link rel="icon" href="/icons/icon-192x192.png">
     <!-- For iOS support -->
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" integrity="sha512-Evv84Mr4kqVGRNSgIGL/F/aIDqQb7xQ2vcrdIwxfjThSH8CSR7PBEakCr51Ck+w+/U6swU2Im1vVX0SVk9ABhg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 
 </head>
 <body>
     <div class="header">
         <div class="logo-container">
-            <svg class="door-icon" xmlns="http://www.w3.org/2000/svg" viewBox="3 6 24 24">
-                <path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H6V4h12v16z"/>
-                <circle cx="15" cy="12" r="1.5"/>
-            </svg>
-            <h1>Doors</h1>
+            <p>Doors</p>
         </div>
-        <p class="tagline">Close it and never find it again !!</p>
-        <a href="about.html">New to Doors ? , Click here to know more.</a>
-        <br><br>
-        <button id="createRoom">Create New Room</button>
+        <div class="action_container">
+            <button id="logout_button">Logout</button>
+            <button id="aboutus_button">About Us</button>
+        </div>
     </div>
+
+    <button id="createRoom"><i class="fa-solid fa-plus"></i></button>
     
     <div id="active_rooms" class="room-container">
         <div class="empty-state">No active rooms. Create one to get started!</div>
@@ -37,6 +36,23 @@
     <script src="https://dechat-o5h4.onrender.com/socket.io/socket.io.js"></script>
     <script src="doors.js"></script>
     <script>
+
+        document.addEventListener("DOMContentLoaded", function() {
+            const token = localStorage.getItem('token');
+            if(!token){
+                window.location.href = '/login.html';
+            }
+        });
+
+        document.getElementById('logout_button').addEventListener('click' , () => {
+            localStorage.removeItem(token);
+            window.location.href = 'login.html';
+        })
+
+        document.getElementById('aboutus_button').addEventListener('click' , () => {
+            window.location.href = 'about.html';
+        })
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/service-worker.js')

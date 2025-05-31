@@ -1,10 +1,14 @@
 const express = require('express');
 const path = require('path');
 const app = express();
+const mongoose = require('mongoose');
 const http = require('http');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
 const { Socket } = require('dgram');
+require('dotenv').config();
 
 const io = new Server(server , {
     maxHttpBufferSize: 5e6,
@@ -12,6 +16,7 @@ const io = new Server(server , {
     pingInterval: 1000
 })
 
+const dbKey = process.env.DB_KEY;
 const rooms = {}
 const colorPool = {}
 const assignedColors = {}
@@ -26,6 +31,24 @@ const NO_FILE = false
 // IS REPLYING TO A MESSAGE FLAG
 const FLAG = true
 
+mongoose.connect('mongodb://localhost:27017/DoorsDB');
+
+const UserSchema = new mongoose.Schema(
+    {
+        username: String,
+        email: String,
+        password: String,
+        RoomOnlineData: [ // maintains the UP time of the user in a room along with the date.
+            {
+                Date: String, // dd-mm-yyyy
+                joinTime: Object, // Join time : Leave time (Key value Pairs).
+            }
+        ]
+
+    }
+)
+
+const User = mongoose.model('users' , UserSchema)
 
 // To increase the size to transfer files , easily
 app.use(express.json({limit: '50mb'})) 
@@ -40,6 +63,49 @@ app.get('/index.html', (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+
+app.get('/login.html' , (req , res) => {
+    return res.sendFile(path.resolve(__dirname, 'public', 'login.html'))
+})
+
+app.get('/signup.html', (req, res) => {
+    return res.sendFile(path.resolve(__dirname, 'public', 'signup.html'));
+});
+
+app.post('/login' , async (req , res) => {
+    const {email , password} = req.body;
+    const user = await User.findOne({email});
+    if(!user){
+        return res.json({message: 'Invalid email or password.'});
+    }
+    const isMatch = await bcrypt.compare(password , user.password);
+
+    if(!isMatch){
+        return res.json({message: 'Invalid Password.'});
+    }
+
+    const token = jwt.sign({id: user._id} , dbKey , {expiresIn: "31d"});
+    res.json({token});
+})
+
+app.post('/signup' , async (req , res) => {
+    const {username , email , password} = req.body;
+    console.log(req.body)
+    const userExists = await User.findOne({email});
+    if(userExists){
+        return res.json({message: 'User already logged in , no need to sign-up.'});
+    }
+    const saltRounds = 10;
+    const hashed = await bcrypt.hash(password , saltRounds);
+    const newUser = new User({username , email , password: hashed});
+    await newUser.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Successfully Signed In 🥂'
+    });
+})
 
 // Randomly assigns the color from the color pool
 function assignColors(colors){
