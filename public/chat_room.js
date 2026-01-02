@@ -52,6 +52,8 @@ const FLAG = true
 let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
 let msg_to_edit_index = null
 let count = 0
+let imageChunks = [];
+let display_file_data = ''
 
 
 
@@ -125,33 +127,54 @@ user.on('take_room_title' , (room_title) => {
     display_chat_elements();
 })
 
-async function compressImage(image) {
-    const parameters = {
-        maxSizeMB: 0.5,
-        useWebWorker: true
-    };
-
-    const compressedFile = await imageCompression(image , parameters);
-
+async function imagePreview(image) {
+    fileData = image
+    fileType = image.type
     const reader = new FileReader();
     reader.readAsDataURL(image);
     reader.onload = () => {
         imageContainer.innerHTML = `<img src='${reader.result}' />
         <button onclick=cancelImg() id='cancelImgBtn'><i class="fa-solid fa-xmark"></button>`
-        fileData = reader.result
-        fileType = compressedFile.type
         scrollToBottomWindow()
     }
 }
+
+const CHUNK_SIZE = 64 * 1024; // 64KB
+
+function updateImageSendingProgress(sentBytes, totalBytes) {
+  const percentage = Math.min((sentBytes / totalBytes) * 100, 100);
+  image_sending_indicator.innerHTML = `${percentage.toFixed(2)}%`;
+}
+
+async function sendImage(user, file) {
+  let offset = 0;
+
+  while (offset < file.size) {
+    const chunk = file.slice(offset, offset + CHUNK_SIZE);
+    const buffer = await chunk.arrayBuffer(); // async, non-blocking
+    user.emit("image-chunk", buffer);
+    offset += CHUNK_SIZE;
+    updateImageSendingProgress(offset, file.size);
+  }
+
+  user.emit("image-end");
+}
+
 
 fileInput.addEventListener('change' , () => {
     isFile = true
     let file = fileInput.files[0]
     imageContainer.style.display = 'flex';
     if(file && file.type.startsWith("image/")){
-        compressImage(file);
+        imagePreview(file);
     }
 })
+
+
+user.on("image-chunk", (chunk) => {
+    imageChunks.push(chunk); // chunk = ArrayBuffer / Uint8Array
+});
+
 
 function scrollToBottomWindow(){
     window.scrollTo({top: document.body.scrollHeight + 200 , behavior: "smooth"})
@@ -231,7 +254,7 @@ user.on('removetypingBall' , (userColor) => {
 
 sendbtn.addEventListener('click' , (e) => {
     if(isFile){
-        user.emit('sendFile' , fileData , fileType)
+        sendImage(user , fileData)
         image_sending_indicator.style.display = 'flex';
         image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
         clearReplyPreview();
@@ -305,12 +328,20 @@ user.on('message', (msg_object) => {
     handleTypingBubble();
 });
 
-user.on('receiveFile' , (file_object) => {
-    let sender = String(file_object.sender)
-    let file_data = String(file_object.file_data)
-    let file_type = String(file_object.file_type)
-    let userColor = String(file_object.userColor)
-    let msg_index = parseInt(file_object.msg_index)
+function construct_file_data(){
+    const blob = new Blob(imageChunks, { type: "image/*" }); // or appropriate MIME type
+    const url = URL.createObjectURL(blob);
+    let file_data = url
+    imageChunks = [];
+    return file_data;
+}
+
+user.on('recieve_file' , (sender_obj) => {
+    
+    let sender = String(sender_obj.sender)
+    let userColor = String(sender_obj.userColor)
+    let msg_index = parseInt(sender_obj.msg_index)
+    let file_data = construct_file_data()
     
     
     let msgContainer = document.createElement('div') // Main container

@@ -7,6 +7,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
+const zlib = require('zlib');
 const { Socket } = require('dgram');
 require('dotenv').config();
 
@@ -94,7 +95,7 @@ app.post('/signup' , async (req , res) => {
     const {username , email , password} = req.body;
     const userExists = await User.findOne({email});
     if(userExists){
-        return res.json({message: 'User already logged in , no need to sign-up.'});
+        return res.json({message: 'User already logged in.'});
     }
     const saltRounds = 10;
     const hashed = await bcrypt.hash(password , saltRounds);
@@ -128,13 +129,11 @@ function constructMsgObject(senderId , msg , msg_i , userColor , file_flag , fla
 }
 
 // constructs a file object with necessary file information to pass to the room
-function constructFileObject(senderId , userColor , msg_index , file_data , file_type){
+function senderInfo(senderId , userColor , msg_index){
     let file_object = {
         sender: senderId,
         userColor : userColor,
-        msg_index: msg_index,
-        file_data: file_data,
-        file_type: file_type
+        msg_index: msg_index
     }
     return file_object
 }
@@ -189,6 +188,8 @@ setInterval(() => {
 // Handles the new connections and disconnections.
 io.on('connection' , user => {
 
+    
+
     io.to(user.id).emit("displayAvailableRooms" , assignedColors , room_titles , room_max_connections)
     
     user.on('joinRoom' , (roomKey , room_title , max_connections) => {
@@ -209,6 +210,25 @@ io.on('connection' , user => {
         })
 
         io.to(user.id).emit('TakeUserId' , user.id)
+
+        const gzip = zlib.createGzip({level: 6});
+
+        user.on("image-chunk", (data) => {
+            gzip.write(Buffer.from(data));
+        });
+
+        user.on("image-end", () => {
+            gzip.end();
+            let userColor = rooms[roomKey][user.id]
+            let msg_i = msg_index[roomKey]
+            let sender_obj = senderInfo(user.id , userColor , msg_i)
+            msg_index[roomKey]++
+            io.to(roomKey).emit('recieve_file' , sender_obj)
+        });
+
+        gzip.on("data", (chunk) => {
+            io.to(roomKey).emit("image-chunk", chunk);
+        });
 
         isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' , '']
 
@@ -234,13 +254,13 @@ io.on('connection' , user => {
             io.to(roomKey).emit('msgEdited' , msg_object)
         })
 
-        user.on('sendFile' , (file_data , file_type) => {
-            let userColor = rooms[roomKey][user.id]
-            let msg_i = msg_index[roomKey]
-            let file_object = constructFileObject(user.id , userColor , msg_i , file_data , file_type)
-            msg_index[roomKey]++
-            io.to(roomKey).emit('receiveFile' , file_object)
-        })
+        // user.on('sendFile' , (file_data , file_type) => {
+        //     let userColor = rooms[roomKey][user.id]
+        //     let msg_i = msg_index[roomKey]
+        //     let file_object = senderInfo(user.id , userColor , msg_i , file_data , file_type)
+        //     msg_index[roomKey]++
+        //     io.to(roomKey).emit('receiveFile' , file_object)
+        // })
 
         user.on('typing' , () => {
             let userColor = rooms[roomKey][user.id]
