@@ -255,8 +255,8 @@ user.on('removetypingBall' , (userColor) => {
 sendbtn.addEventListener('click' , (e) => {
     if(isFile){
         sendImage(user , fileData)
-        image_sending_indicator.style.display = 'flex';
-        image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
+        // image_sending_indicator.style.display = 'flex';
+        // image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
         clearReplyPreview();
         cancelImg();
         return
