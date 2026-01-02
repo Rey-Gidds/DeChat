@@ -213,7 +213,7 @@ io.on('connection' , user => {
 
         const gzip = zlib.createGzip({level: 6});
 
-        user.on("image-chunk", (data) => {
+        user.on("upload-chunk", (data) => {
             gzip.write(Buffer.from(data));
         });
 

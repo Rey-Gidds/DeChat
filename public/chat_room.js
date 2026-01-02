@@ -152,7 +152,7 @@ async function sendImage(user, file) {
   while (offset < file.size) {
     const chunk = file.slice(offset, offset + CHUNK_SIZE);
     const buffer = await chunk.arrayBuffer(); // async, non-blocking
-    user.emit("image-chunk", buffer);
+    user.emit("upload-chunk", buffer);
     offset += CHUNK_SIZE;
     updateImageSendingProgress(offset, file.size);
   }
