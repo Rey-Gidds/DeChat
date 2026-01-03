@@ -329,6 +329,7 @@ user.on('message', (msg_object) => {
 });
 
 function construct_file_data(){
+    image_sending_indicator.innerHTML = '<p>Processing...</p>';
     const blob = new Blob(imageChunks, { type: "image/*" }); // or appropriate MIME type
     const url = URL.createObjectURL(blob);
     let file_data = url
