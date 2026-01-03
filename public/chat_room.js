@@ -55,8 +55,6 @@ let count = 0
 let imageChunks = [];
 let display_file_data = ''
 
-
-
 if(!isCreate){
     key = JSON.parse(localStorage.getItem("roomKey")) || null
     if(key) {
@@ -146,7 +144,7 @@ function updateImageSendingProgress(sentBytes, totalBytes) {
   image_sending_indicator.innerHTML = `${percentage.toFixed(2)}%`;
 }
 
-async function sendImage(user, file) {
+async function sendImage(file) {
   let offset = 0;
 
   while (offset < file.size) {
@@ -254,7 +252,7 @@ user.on('removetypingBall' , (userColor) => {
 
 sendbtn.addEventListener('click' , (e) => {
     if(isFile){
-        sendImage(user , fileData)
+        sendImage(fileData)
         // image_sending_indicator.style.display = 'flex';
         // image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
         clearReplyPreview();

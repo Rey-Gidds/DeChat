@@ -211,23 +211,16 @@ io.on('connection' , user => {
 
         io.to(user.id).emit('TakeUserId' , user.id)
 
-        const gzip = zlib.createGzip({level: 6});
-
-        user.on("upload-chunk", (data) => {
-            gzip.write(Buffer.from(data));
+        user.on("upload-chunk", (chunk) => {
+            io.to(roomKey).emit("image-chunk", chunk);
         });
 
         user.on("image-end", () => {
-            gzip.end();
             let userColor = rooms[roomKey][user.id]
             let msg_i = msg_index[roomKey]
             let sender_obj = senderInfo(user.id , userColor , msg_i)
             msg_index[roomKey]++
             io.to(roomKey).emit('recieve_file' , sender_obj)
-        });
-
-        gzip.on("data", (chunk) => {
-            io.to(roomKey).emit("image-chunk", chunk);
         });
 
         isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' , '']

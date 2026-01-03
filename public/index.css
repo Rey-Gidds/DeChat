@@ -435,7 +435,7 @@ input {
     display: flex;
     justify-content: center;
 }
-.sending-bar{
+/* .sending-bar{
     padding: 5px;
     border-radius: 20px;
     background-color: white;
@@ -443,7 +443,7 @@ input {
     width: 50%;
 }
 
-@keyframes back-and-forth{
+/* @keyframes back-and-forth{
     0%{
         transform: translateX(0);
     }
@@ -459,7 +459,7 @@ input {
     100%{
         transform: translateX(0);
     }
-}
+} */
 
 /* Mobile Responsiveness */
 @media screen and (max-width: 600px) {
