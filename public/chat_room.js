@@ -506,10 +506,11 @@ function messageNotification(){
 }
 
 function render_msg(msg , userColor , sender , msg_index , flag_file , flag_reply , rmsg ,file_msg_index , rcolor , msgContainer , editing_msg){
+    console.log('file_msg_index' , file_msg_index)
     if(flag_file){
         let replyMsg = document.createElement('div');
         replyMsg.className = 'replyMsg';
-        let rmsg = msgindex2image[file_msg_index];
+        rmsg = msgindex2image[file_msg_index];
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}") />
