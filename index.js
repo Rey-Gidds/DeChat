@@ -223,7 +223,7 @@ io.on('connection' , user => {
             io.to(roomKey).emit('recieve_file' , sender_obj)
         });
 
-        isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' , '']
+        isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' ,-1 , ''] // initialising the isReplying object for the user in the room.
 
         let color = assignColors(colorPool[roomKey])
         
@@ -242,8 +242,9 @@ io.on('connection' , user => {
             let replying_flag_file = isReplying[roomKey][user.id][0]
             let replying_flag = isReplying[roomKey][user.id][1]
             let rmsg = isReplying[roomKey][user.id][2]
+            let file_msg_index = isReplying[roomKey][user.id][4]
             let rcolor = isReplying[roomKey][user.id][3]
-            let msg_object = constructMsgObject(user.id , msg , msg_index_for_edit , userColor , replying_flag_file , replying_flag , rmsg , rcolor)
+            let msg_object = constructMsgObject(user.id , msg , msg_index_for_edit , userColor , replying_flag_file , replying_flag , rmsg ,file_msg_index, rcolor)
             io.to(roomKey).emit('msgEdited' , msg_object)
         })
 
@@ -275,10 +276,10 @@ io.on('connection' , user => {
             let userColor = rooms[roomKey][user.id]
             let file_flag = isReplying[roomKey][user.id][0]
             let flag = isReplying[roomKey][user.id][1]
-            let rmsg = isReplying[roomKey][user.id][2]
+            let file_msg_index = isReplying[roomKey][user.id][2]
             let rcolor = isReplying[roomKey][user.id][3]
             let msg_i = msg_index[roomKey]
-            msg_object = constructMsgObject(user.id , msg , msg_i , userColor , file_flag , flag , rmsg , rcolor)
+            msg_object = constructMsgObject(user.id , msg , msg_i , userColor , file_flag , flag , file_msg_index , rcolor)
             msg_index[roomKey]++
             io.to(roomKey).emit('message' , msg_object)
         })
@@ -287,11 +288,12 @@ io.on('connection' , user => {
             io.to(roomKey).emit('delfromChatBox' , msgToDel)
         })
 
-        user.on('update_reply_flag' , (file_flag , flag , rmsg , rcolor) => {
+        user.on('update_reply_flag' , (file_flag , flag , rmsg ,file_msg_index, rcolor) => {
             isReplying[roomKey][user.id][0] = file_flag
             isReplying[roomKey][user.id][1] = flag
             isReplying[roomKey][user.id][2] = rmsg
             isReplying[roomKey][user.id][3] = rcolor
+            isReplying[roomKey][user.id][4] = file_msg_index
             console.log('is Replying: ' , isReplying[roomKey])
         })
 

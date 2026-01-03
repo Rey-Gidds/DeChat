@@ -52,7 +52,8 @@ const FLAG = true
 let isCreate = JSON.parse(localStorage.getItem("isCreate")) || false
 let msg_to_edit_index = null
 let count = 0
-let imageChunks = [];
+let imageChunks = []
+let msgindex2image = {} // To map the msg index to the image URL
 let display_file_data = ''
 
 if(!isCreate){
@@ -340,6 +341,7 @@ user.on('recieve_file' , (sender_obj) => {
     let userColor = String(sender_obj.userColor)
     let msg_index = parseInt(sender_obj.msg_index)
     let file_data = construct_file_data()
+    msgindex2image[msg_index] = file_data
     
     
     let msgContainer = document.createElement('div') // Main container
@@ -368,7 +370,7 @@ user.on('recieve_file' , (sender_obj) => {
         msgContainer.style.width = 'fit-content'
         msgContainer.style.alignSelf = 'flex-start'
         newMsg.innerHTML = `<img src=${file_data} class='chat-img' onclick=openImageWindow("${file_data}") />
-        <button class='replyBtnImg' onclick='replyFilePreview("${file_data}", "${userColor}")'>
+        <button class='replyBtnImg' onclick='replyFilePreview("${file_data}", "${userColor}", "${msg_index}")'>
             <i class="fa-solid fa-reply"></i>
         </button>`
         messageNotification()
@@ -429,7 +431,7 @@ function scrollToBottomChatBox(){
     chatBox.scrollTo({top: chatBox.scrollHeight , behavior: "smooth"})
 }
 
-function replyFilePreview(file_data , color){
+function replyFilePreview(file_data , color, msg_index){
     isReplying = true
     replyPreviewContainer.style.display = 'flex';
     replyPreviewContainer.innerHTML = ''
@@ -444,7 +446,7 @@ function replyFilePreview(file_data , color){
     replyPreview.style.border = `3px dashed ${color}`
     replyPreview.style.borderRadius = '10px'
     replyPreviewContainer.appendChild(replyPreview)
-    user.emit('update_reply_flag' , YES_FILE , FLAG , file_data , color)
+    user.emit('update_reply_flag' , YES_FILE , FLAG ,'', msg_index , color)
     scrollToBottomWindow()
 }
 
@@ -462,7 +464,7 @@ function replyTextPreview(msg , color){
     replyPreview.style.color = color
     replyPreviewContainer.appendChild(replyPreview)
     console.log('before sending to backend: ' , msg , color)
-    user.emit('update_reply_flag' , NO_FILE , FLAG , msg , color)
+    user.emit('update_reply_flag' , NO_FILE , FLAG , msg ,-1, color)
     scrollToBottomWindow()
     return;
 }
@@ -500,15 +502,15 @@ function messageNotification(){
     })
 }
 
-function render_msg(msg , userColor , sender , msg_index , flag_file , flag_reply , rmsg , rcolor , msgContainer , editing_msg){
-
+function render_msg(msg , userColor , sender , msg_index , flag_file , flag_reply , rmsg ,file_msg_index , rcolor , msgContainer , editing_msg){
     if(flag_file){
         let replyMsg = document.createElement('div');
         replyMsg.className = 'replyMsg';
+        let rmsg = msgindex2image[file_msg_index];
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
-            <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}")/>
-            <button class='replyBtnImg' onclick='replyFilePreview("${rmsg}" , "${rcolor}")'>
+            <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}") />
+            <button class='replyBtnImg' onclick='replyFilePreview("${rmsg}" , "${rcolor}", "${msg_index})'>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;
