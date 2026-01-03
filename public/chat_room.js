@@ -473,7 +473,7 @@ function replyTextPreview(msg , color){
 function cancelReply(){
     isReplying = false
     clearReplyPreview();
-    user.emit('update_reply_flag' , NO_FILE , !FLAG , '' , '')
+    user.emit('update_reply_flag' , NO_FILE , !FLAG , '' , '', -1)
 }
 
 

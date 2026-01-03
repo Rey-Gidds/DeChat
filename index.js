@@ -114,7 +114,7 @@ function assignColors(colors){
 }
 
 // consrtucts a message object including the message information to send to the room and the user.
-function constructMsgObject(senderId , msg , msg_i , userColor , file_flag , flag , rmsg , rcolor){
+function constructMsgObject(senderId , msg , msg_i , userColor , file_flag , flag , rmsg ,file_msg_index, rcolor){
     let msg_object = {
         sender: senderId,
         msg: msg,
@@ -123,7 +123,8 @@ function constructMsgObject(senderId , msg , msg_i , userColor , file_flag , fla
         file_flag: file_flag,
         flag : flag,
         rmsg : rmsg,
-        rcolor: rcolor
+        rcolor: rcolor,
+        file_msg_index: file_msg_index
     }
     return msg_object;
 }
