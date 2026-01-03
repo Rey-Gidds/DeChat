@@ -433,7 +433,7 @@ input {
     margin: 5px;
     width: 200px;
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
 }
 
 #sending-indicator p{
