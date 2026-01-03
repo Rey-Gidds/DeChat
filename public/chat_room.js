@@ -141,7 +141,7 @@ const CHUNK_SIZE = 64 * 1024; // 64KB
 
 function updateImageSendingProgress(sentBytes, totalBytes) {
   const percentage = Math.min((sentBytes / totalBytes) * 100, 100);
-  image_sending_indicator.innerHTML = `${percentage.toFixed(2)}%`;
+  image_sending_indicator.innerHTML = `<p>${percentage.toFixed(2)}%</p>`;
 }
 
 async function sendImage(file) {

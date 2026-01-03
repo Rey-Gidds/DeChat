@@ -435,6 +435,11 @@ input {
     display: flex;
     justify-content: center;
 }
+
+#sending-indicator p{
+    font-size: 14px;
+    color: #ccc;
+}
 /* .sending-bar{
     padding: 5px;
     border-radius: 20px;
