@@ -510,7 +510,7 @@ function render_msg(msg , userColor , sender , msg_index , flag_file , flag_repl
         replyMsg.style.border = `2px dashed ${rcolor}`;
         replyMsg.innerHTML = `
             <img src=${rmsg} class='replyImg' onclick=openImageWindow("${rmsg}") />
-            <button class='replyBtnImg' onclick='replyFilePreview("${rmsg}" , "${rcolor}", "${msg_index})'>
+            <button class='replyBtnImg' onclick='replyFilePreview("${rmsg}" , "${rcolor}", "${file_msg_index})'>
                 <i class="fa-solid fa-reply"></i>
             </button>
         `;

@@ -276,10 +276,11 @@ io.on('connection' , user => {
             let userColor = rooms[roomKey][user.id]
             let file_flag = isReplying[roomKey][user.id][0]
             let flag = isReplying[roomKey][user.id][1]
-            let file_msg_index = isReplying[roomKey][user.id][2]
+            let file_msg_index = isReplying[roomKey][user.id][4]
+            let rmsg = isReplying[roomKey][user.id][2]
             let rcolor = isReplying[roomKey][user.id][3]
             let msg_i = msg_index[roomKey]
-            msg_object = constructMsgObject(user.id , msg , msg_i , userColor , file_flag , flag , file_msg_index , rcolor)
+            msg_object = constructMsgObject(user.id , msg , msg_i , userColor , file_flag , flag ,rmsg, file_msg_index , rcolor)
             msg_index[roomKey]++
             io.to(roomKey).emit('message' , msg_object)
         })
