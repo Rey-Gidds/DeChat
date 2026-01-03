@@ -223,7 +223,7 @@ io.on('connection' , user => {
             io.to(roomKey).emit('recieve_file' , sender_obj)
         });
 
-        isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' ,-1 , ''] // initialising the isReplying object for the user in the room.
+        isReplying[roomKey][user.id] = [NO_FILE , !FLAG , '' ,'', -1] // initialising the isReplying object for the user in the room.
 
         let color = assignColors(colorPool[roomKey])
         

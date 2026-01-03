@@ -447,7 +447,7 @@ function replyFilePreview(file_data , color, msg_index){
     replyPreview.style.border = `3px dashed ${color}`
     replyPreview.style.borderRadius = '10px'
     replyPreviewContainer.appendChild(replyPreview)
-    user.emit('update_reply_flag' , YES_FILE , FLAG ,'', msg_index , color)
+    user.emit('update_reply_flag' , YES_FILE , FLAG ,'',color, msg_index)
     scrollToBottomWindow()
 }
 
@@ -465,7 +465,7 @@ function replyTextPreview(msg , color){
     replyPreview.style.color = color
     replyPreviewContainer.appendChild(replyPreview)
     console.log('before sending to backend: ' , msg , color)
-    user.emit('update_reply_flag' , NO_FILE , FLAG , msg ,-1, color)
+    user.emit('update_reply_flag' , NO_FILE , FLAG , msg ,color, -1)
     scrollToBottomWindow()
     return;
 }
