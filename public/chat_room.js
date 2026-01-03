@@ -137,7 +137,7 @@ async function imagePreview(image) {
     }
 }
 
-const CHUNK_SIZE = 64 * 1024; // 64KB
+const CHUNK_SIZE = 128 * 1024; // 128KB
 
 function updateImageSendingProgress(sentBytes, totalBytes) {
   const percentage = Math.min((sentBytes / totalBytes) * 100, 100);
@@ -145,17 +145,19 @@ function updateImageSendingProgress(sentBytes, totalBytes) {
 }
 
 async function sendImage(file) {
-  let offset = 0;
-
-  while (offset < file.size) {
-    const chunk = file.slice(offset, offset + CHUNK_SIZE);
-    const buffer = await chunk.arrayBuffer(); // async, non-blocking
-    user.emit("upload-chunk", buffer);
-    offset += CHUNK_SIZE;
-    updateImageSendingProgress(offset, file.size);
-  }
-
-  user.emit("image-end");
+    let offset = 0;
+    image_sending_indicator.style.display = "flex";
+    while (offset < file.size) {
+        const chunk = file.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await chunk.arrayBuffer(); // async, non-blocking
+        user.emit("upload-chunk", buffer);
+        offset += CHUNK_SIZE;
+        updateImageSendingProgress(offset, file.size);
+    }
+    clearReplyPreview();
+    clearImagePreview();
+    cancelImg();
+    user.emit("image-end");
 }
 
 
@@ -255,8 +257,6 @@ sendbtn.addEventListener('click' , (e) => {
         sendImage(fileData)
         // image_sending_indicator.style.display = 'flex';
         // image_sending_indicator.innerHTML = '<div class="sending-bar"></div>'
-        clearReplyPreview();
-        cancelImg();
         return
     }
     else if(message.value.trim() === ''){
