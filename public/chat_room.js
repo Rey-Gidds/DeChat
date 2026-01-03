@@ -312,12 +312,13 @@ user.on('message', (msg_object) => {
     let replying_flag = msg_object.flag
     let rmsg = String(msg_object.rmsg)
     let rcolor = String(msg_object.rcolor)
+    let file_msg_index = String(msg_object.file_msg_index)
     let NOT_EDITING = false
     msgContainer.className = 'msgBubble';
     msgContainer.style.color = userColor;
     msgContainer.id = msg_index;
 
-    render_msg(msg, userColor , sender, msg_index, file_flag , replying_flag , rmsg , rcolor, msgContainer , NOT_EDITING)
+    render_msg(msg, userColor , sender, msg_index, file_flag , replying_flag , rmsg ,file_msg_index, rcolor, msgContainer , NOT_EDITING)
 
     chatBox.appendChild(msgContainer); // Append entire bubble to chatBox
 
@@ -484,13 +485,14 @@ user.on('msgEdited' , (msg_object) => {
     let replying_flag_file = msg_object.file_flag
     let replying_flag = msg_object.flag
     let rmsg = String(msg_object.rmsg)
+    let file_msg_index = String(msg_object.file_msg_index)
     let rcolor = String(msg_object.rcolor)
     let YES_EDITING = true
     let editedMsgContainer = document.getElementById(`content_${msg_index}`)
     
     editedMsgContainer.innerHTML = ''
 
-    render_msg(msg , userColor  , sender , msg_index , replying_flag_file , replying_flag , rmsg , rcolor , editedMsgContainer , YES_EDITING)
+    render_msg(msg , userColor  , sender , msg_index , replying_flag_file , replying_flag , rmsg ,file_msg_index , rcolor , editedMsgContainer , YES_EDITING)
 })
 
 function messageNotification(){
