@@ -447,7 +447,7 @@ function replyFilePreview(file_data , color, msg_index){
     replyPreview.style.border = `3px dashed ${color}`
     replyPreview.style.borderRadius = '10px'
     replyPreviewContainer.appendChild(replyPreview)
-    user.emit('update_reply_flag' , YES_FILE , FLAG ,'',color, msg_index)
+    user.emit('update_reply_flag' , YES_FILE , FLAG ,'',color, parseInt(msg_index))
     scrollToBottomWindow()
 }
 
