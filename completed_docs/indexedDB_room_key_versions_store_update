@@ -1,0 +1,54 @@
+# Implementation Plan - IndexedDB Store Consolidation & Client/Server Fixes
+
+This plan consolidates all room key storage in IndexedDB into the version-aware store (`room-key-versions`), removes the legacy `room-keys` store, and resolves the compilation/build errors.
+
+## User Review Required
+
+No critical review required.
+
+## Proposed Changes
+
+### 1. IndexedDB Refactoring
+
+#### [MODIFY] [crypto.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/lib/crypto.ts)
+- Update IndexedDB version and delete references to the legacy `ROOM_KEY_STORE` (`room-keys`).
+- In `getDB()`, do not initialize `ROOM_KEY_STORE`.
+- Refactor helper functions to query/update `ROOM_KEY_VERSIONS_STORE` (`room-key-versions`):
+  - `saveRoomKey(roomId, roomKey)`: Stores the key under version `0` in `ROOM_KEY_VERSIONS_STORE`.
+  - `getRoomKey(roomId)`: Retrieves the latest key version from `ROOM_KEY_VERSIONS_STORE` by calling `getLatestRoomKeyVersion(roomId)`.
+  - `removeRoomKey(roomId)`: Deletes all key versions for the room by calling `deleteAllRoomKeyVersions(roomId)`.
+
+---
+
+### 2. API Route & Server-Side Fixes
+
+#### [MODIFY] [members API route](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/api/rooms/%5BroomId%5D/members/route.ts)
+- Enriched membership projection already fetches `publicKey`. Expose `publicKey` in the API response `members` array (e.g. `publicKey: m.user.publicKey || null`) so the client has access to public keys.
+
+#### [MODIFY] [complete/route.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/api/rooms/%5BroomId%5D/key-rotation/complete/route.ts)
+- Replace `const client = await db.getClient()` with `const client = await ensureMongoConnected()`.
+
+#### [MODIFY] [claim/route.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/api/rooms/%5BroomId%5D/key-rotation/claim/route.ts)
+- Replace `result.lastErrorObject?.updatedExisting === true` with `result !== null`.
+
+---
+
+### 3. Client-Side Page & Key-Rotation Fixes
+
+#### [MODIFY] [page.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/rooms/%5BroomId%5D/page.tsx)
+- Remove `import { db } from "@/lib/auth";` and any direct MongoDB query logic from this client component.
+- In the leader key-rotation execution flow:
+  - Retrieve the current key version from state (`roomKeyRotation.lastKeyVersion`) rather than querying the `rooms` collection.
+  - Filter and retrieve remaining room members and their public keys from the existing React state `members` rather than querying the `room_memberships` and `user` collections directly.
+- Narrow the return type of `getRoomKeyVersion` from `CryptoKey | null` to `CryptoKey` before assigning to `roomKey` to resolve type assignment error.
+
+#### [MODIFY] [key-rotation.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/lib/key-rotation.ts)
+- Correct the return type of `encryptMessage` from `EncryptedMessagePayloadType` to `EncryptedMessagePayload`.
+
+## Verification Plan
+
+### Automated Tests
+- Run the compiler check: `cd packages/frontend; npx tsc --noEmit`
+
+### Manual Verification
+- Verify that room entry, message decryption, and key rotation workflows function with the consolidated IndexedDB store.
