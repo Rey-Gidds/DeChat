@@ -125,7 +125,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </header>
       )}
 
-      <main className="flex-1 pb-20 sm:pb-0">{children}</main>
+      <main className={`flex-1 ${isRoomPage ? "" : "pb-20 sm:pb-0"}`}>{children}</main>
 
       {/* Mobile footer nav */}
       {!isRoomPage && session?.user && (

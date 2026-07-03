@@ -19,13 +19,9 @@ async function notifyKeyRotationPending(
     process.env.BETTER_AUTH_SECRET ||
     process.env.WS_TICKET_SECRET;
   if (!secret) return;
-
   await fetch(`${wsUrl}/internal/key-rotation-pending`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-internal-secret": secret,
-    },
+    headers: { "Content-Type": "application/json", "x-internal-secret": secret },
     body: JSON.stringify({ roomId, version, reason, triggerUserId }),
   }).catch((err) => {
     console.error("[leave] Failed to notify websocket server:", err);
@@ -48,58 +44,121 @@ export async function POST(req: Request, context: RouteContext) {
   if (!membership) {
     return NextResponse.json({ error: "Not a member of this room" }, { status: 404 });
   }
-
   if (membership.status !== "APPROVED") {
     return NextResponse.json({ error: "Only approved members can leave" }, { status: 400 });
   }
-
   if (membership.role === "OWNER") {
     return NextResponse.json(
-      { error: "Room owners cannot leave. Transfer ownership or delete the room first." },
+      { error: "Room owners cannot leave. Transfer ownership first." },
       { status: 400 }
     );
   }
 
+  // Parse optional succession payload (only relevant when caller is ADMIN)
+  let promoteToAdmin: string[] = [];
+  let makeEveryoneAdmin = false;
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (Array.isArray(body.promoteToAdmin)) {
+      promoteToAdmin = body.promoteToAdmin.filter((id: unknown) => typeof id === "string");
+    }
+    if (typeof body.makeEveryoneAdmin === "boolean") {
+      makeEveryoneAdmin = body.makeEveryoneAdmin;
+    }
+  } catch {
+    // body is optional — proceed without it
+  }
+
+  // Count active admins (OWNER or ADMIN) excluding the leaving user
+  const otherAdminCount = await db.collection("room_memberships").countDocuments({
+    roomId,
+    userId: { $ne: userId },
+    status: "APPROVED",
+    isBlocked: false,
+    role: { $in: ["OWNER", "ADMIN"] },
+  });
+
+  const isSoleAdmin = membership.role === "ADMIN" && otherAdminCount === 0;
+
+  if (isSoleAdmin) {
+    // Count other remaining approved members (who could be promoted)
+    const otherMemberCount = await db.collection("room_memberships").countDocuments({
+      roomId,
+      userId: { $ne: userId },
+      status: "APPROVED",
+      isBlocked: false,
+    });
+
+    if (otherMemberCount > 0) {
+      // Must nominate successors
+      if (!makeEveryoneAdmin && promoteToAdmin.length === 0) {
+        // Return the current member list so the client can render the picker
+        const members = await db
+          .collection("room_memberships")
+          .find({ roomId, userId: { $ne: userId }, status: "APPROVED", isBlocked: false })
+          .toArray();
+        return NextResponse.json(
+          {
+            error: "succession_required",
+            members: members.map((m) => ({
+              userId: m.userId.toString(),
+              role: m.role,
+            })),
+          },
+          { status: 400 }
+        );
+      }
+
+      const now = new Date();
+
+      if (makeEveryoneAdmin) {
+        await db.collection("room_memberships").updateMany(
+          { roomId, userId: { $ne: userId }, status: "APPROVED", isBlocked: false, role: "MEMBER" },
+          { $set: { role: "ADMIN", updatedAt: now } }
+        );
+      } else {
+        // Validate that all provided userIds are actual approved members
+        const targetIds = promoteToAdmin.map((id) => new ObjectId(id));
+        const validCount = await db.collection("room_memberships").countDocuments({
+          roomId,
+          userId: { $in: targetIds },
+          status: "APPROVED",
+          isBlocked: false,
+        });
+        if (validCount !== targetIds.length) {
+          return NextResponse.json(
+            { error: "One or more selected members are not valid active members" },
+            { status: 400 }
+          );
+        }
+        await db.collection("room_memberships").updateMany(
+          { roomId, userId: { $in: targetIds }, status: "APPROVED", role: "MEMBER" },
+          { $set: { role: "ADMIN", updatedAt: now } }
+        );
+      }
+    }
+    // If otherMemberCount === 0 — last person leaves, fall through to normal leave logic
+  }
+
   const now = new Date();
 
-  // 1. Update membership: set LEFT
   await db.collection("room_memberships").updateOne(
     { _id: membership._id },
-    {
-      $set: {
-        status: "LEFT",
-        leftAt: now,
-        updatedAt: now,
-      },
-    }
+    { $set: { status: "LEFT", leftAt: now, updatedAt: now, role: "MEMBER" } }
   );
 
-  // 2. Decrement memberCount
-  await db.collection("rooms").updateOne(
-    { _id: roomId },
-    { $inc: { memberCount: -1 } }
-  );
+  await db.collection("rooms").updateOne({ _id: roomId }, { $inc: { memberCount: -1 } });
 
-  // 3. Check remaining members
   const remainingCount = await db
     .collection("room_memberships")
     .countDocuments({ roomId, status: "APPROVED", isBlocked: false });
 
-  // 4. If members remain, trigger key rotation
   if (remainingCount > 0) {
-    // Get current lastKeyVersion
-    const room = await db.collection("rooms").findOne(
-      { _id: roomId },
-      { projection: { lastKeyVersion: 1 } }
-    );
-    const currentVersion = room?.lastKeyVersion ?? 0;
-    const newVersion = currentVersion + 1;
-
-    await db.collection("rooms").updateOne(
-      { _id: roomId },
-      { $set: { pendingKeyRotation: true } }
-    );
-
+    const room = await db
+      .collection("rooms")
+      .findOne({ _id: roomId }, { projection: { lastKeyVersion: 1 } });
+    const newVersion = (room?.lastKeyVersion ?? 0) + 1;
+    await db.collection("rooms").updateOne({ _id: roomId }, { $set: { pendingKeyRotation: true } });
     await db.collection("room_key_versions").insertOne({
       _id: new ObjectId(),
       roomId,
@@ -110,12 +169,14 @@ export async function POST(req: Request, context: RouteContext) {
       triggerUserId: userId,
       status: "GENERATING",
     });
-
-    await notifyKeyRotationPending(
-      roomId.toString(),
-      newVersion,
-      "MEMBER_LEFT",
-      userId.toString()
+    await notifyKeyRotationPending(roomId.toString(), newVersion, "MEMBER_LEFT", userId.toString());
+  } else {
+    // Last person left — disable room but preserve their role in case they want to reactivate
+    await db.collection("rooms").updateOne({ _id: roomId }, { $set: { isDisabled: true } });
+    // Restore the preserved role so they can directly rejoin later (architecture §3.2 Case B)
+    await db.collection("room_memberships").updateOne(
+      { _id: membership._id },
+      { $set: { role: membership.role } }
     );
   }
 

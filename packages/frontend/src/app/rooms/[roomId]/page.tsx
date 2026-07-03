@@ -46,7 +46,15 @@ import { MessageList, type UiMessage } from "@/components/chat/message-list";
 import { MessageContextMenu } from "@/components/chat/message-context-menu";
 import { DeleteConfirmDialog } from "@/components/chat/delete-confirm-dialog";
 import { DownArrowButton } from "@/components/chat/down-arrow-button";
-import { MembersPanel, RoomHeader } from "@/components/chat/room-header";
+import { RoomHeader } from "@/components/chat/room-header";
+import {
+  RoomOptionsPage,
+  LeaveConfirmDialog,
+  SuccessionDialog,
+  type RoomMemberEntry,
+  type ViewerRole,
+  type SuccessionMember,
+} from "@/components/chat/room-settings";
 import { useKeyHealth } from "@/components/key-recovery/provider";
 import { Button } from "@/components/ui/button";
 import type { GifMetadata, ImageMetadata, VideoMetadata, ReplyToInfo } from "@/lib/models";
@@ -238,6 +246,11 @@ export default function RoomChatPage() {
   const [status, setStatus] = useState("Connecting...");
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [leaveLoading, setLeaveLoading] = useState(false);
+  const [successionDialogOpen, setSuccessionDialogOpen] = useState(false);
+  const [successionMembers, setSuccessionMembers] = useState<SuccessionMember[]>([]);
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -285,6 +298,15 @@ export default function RoomChatPage() {
   const workerRef = useRef<OutboxRetryWorker | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const setListRef = useCallback((el: HTMLDivElement | null) => {
+    (listRef as any).current = el;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, []);
   const shouldStickToBottomRef = useRef(true);
   const lastMessageRef = useRef<{ createdAt: string; id: string } | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -301,6 +323,16 @@ export default function RoomChatPage() {
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
+
+  // Scroll to bottom when options page is closed
+  useEffect(() => {
+    if (!showOptions && canChat && shouldStickToBottomRef.current) {
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        scrollToBottom("auto");
+      });
+    }
+  }, [showOptions, scrollToBottom]);
 
   const handleScroll = useCallback(() => {
     const el = listRef.current;
@@ -770,7 +802,11 @@ export default function RoomChatPage() {
           })
           .catch(() => undefined);
 
-        requestAnimationFrame(() => scrollToBottom("auto"));
+        setTimeout(() => {
+          if (mounted && shouldStickToBottomRef.current) {
+            scrollToBottom("auto");
+          }
+        }, 100);
 
         const socket = getSocket();
         if (!socket) return;
@@ -1115,6 +1151,7 @@ export default function RoomChatPage() {
     const newBody = editingDraft.trim();
     setEditingMessageId(null);
     setEditingDraft("");
+    setDraft("");
 
     try {
       // Find the original message to get its roomKeyVersion
@@ -1184,7 +1221,7 @@ export default function RoomChatPage() {
 
   const isOwner = roomMeta?.membership?.role === "OWNER";
   const isPending = roomMeta?.membership?.status === "PENDING" || status === "Request pending";
-  const canChat = status === "Connected" && !isPending;
+  const canChat = (status === "Connected" || status === "Updating security..." || isRotating)
 
   async function onSendMedia(file: File) {
     if (!roomId || mediaSending) return;
@@ -1366,22 +1403,115 @@ export default function RoomChatPage() {
     setContextMenu({ x, y, message });
   }, []);
 
+  const refreshMembers = useCallback(() => {
+    if (!roomId) return;
+    void fetch(`/api/rooms/${roomId}/members`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => {
+        const m = (data.members ?? []) as RoomMember[];
+        setMembers(m);
+        setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => mm.userId)));
+      })
+      .catch(() => undefined);
+  }, [roomId]);
+
+  // Kick a user out of the room
+  const handleKickout = useCallback(async (targetUserId: string) => {
+    if (!roomId) return;
+    const res = await fetch(`/api/rooms/${roomId}/kickout/${targetUserId}`, {
+      method: "POST",
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Kickout failed");
+    refreshMembers();
+  }, [roomId, refreshMembers]);
+
+  // Change a member's role (promote/demote/transfer ownership)
+  const handleRoleChange = useCallback(async (targetUserId: string, role: string) => {
+    if (!roomId) return;
+    const res = await fetch(`/api/rooms/${roomId}/members/${targetUserId}/role`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Role change failed");
+    // Refresh room meta to update current user's role if ownership was transferred
+    const metaRes = await fetch(`/api/rooms/${roomId}`, { credentials: "include" });
+    if (metaRes.ok) {
+      const metaData = await metaRes.json();
+      setRoomMeta(metaData);
+    }
+    refreshMembers();
+  }, [roomId, refreshMembers]);
+
+  // Execute the actual leave API call (after confirmation / succession)
+  const executeLeave = useCallback(async (promoteToAdmin?: string[]) => {
+    if (!roomId) return;
+    setLeaveLoading(true);
+    try {
+      const body = promoteToAdmin ? { promoteToAdmin } : {};
+      const res = await fetch(`/api/rooms/${roomId}/leave`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === "succession_required" && Array.isArray(data.members)) {
+          // Sole admin — show succession dialog
+          setSuccessionMembers(
+            (data.members as { userId: string; role: string }[]).map((m) => ({
+              userId: m.userId,
+              role: m.role,
+              user: null,
+              userIndex: null,
+            }))
+          );
+          // Enrich with local member data
+          setSuccessionMembers((prev) =>
+            prev.map((sm) => {
+              const local = members.find((lm) => lm.userId === sm.userId);
+              return local ? { ...sm, user: local.user, userIndex: (local as any).userIndex ?? null } : sm;
+            })
+          );
+          setLeaveDialogOpen(false);
+          setSuccessionDialogOpen(true);
+          return;
+        }
+        throw new Error(data.error || "Failed to leave room");
+      }
+      // Successfully left — navigate away
+      router.push("/");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to leave room");
+    } finally {
+      setLeaveLoading(false);
+    }
+  }, [roomId, members, router]);
+
+  // Initiate leave — show confirmation dialog
+  const handleLeaveRequest = useCallback(() => {
+    setShowOptions(false);
+    setLeaveDialogOpen(true);
+  }, []);
+
   return (
-    <div className="flex h-[100dvh] flex-col bg-black">
-      <div className="flex min-h-0 flex-1 flex-col sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl">
+    <div className="flex h-[100dvh] flex-col bg-black overflow-hidden">
+      <div className="flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
         <RoomHeader
           roomName={roomMeta?.room.name ?? "Room"}
           memberCount={roomMeta?.memberCount ?? 0}
-          roomLink={roomMeta?.room.roomLink ?? ""}
           status={status}
-          onOpenMembers={() => setMembersOpen(true)}
-          onToggleDisable={isOwner ? handleToggleDisable : undefined}
-          isOwner={isOwner}
-          isDisabled={roomDisabled}
+          showOptions={showOptions}
+          onToggleOptions={() => setShowOptions((prev) => !prev)}
         />
 
         {isPending && (
-          <div className="border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-center text-xs text-neutral-400">
+          <div className="border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-center text-xs text-neutral-400 shrink-0">
             Your request is pending. Track updates in{" "}
             <Link href="/pending" className="text-white underline underline-offset-2">
               Pending Requests
@@ -1391,132 +1521,142 @@ export default function RoomChatPage() {
         )}
 
         {roomDisabled && (
-          <div className="border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-center text-xs text-neutral-400">
+          <div className="border-b border-neutral-800 bg-neutral-950 px-4 py-3 text-center text-xs text-neutral-400 shrink-0">
             This room has been disabled by its owner.
           </div>
         )}
 
-        {!canChat && !isPending && status !== "Connecting..." && (
-          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-            <p className="text-sm text-neutral-400">{status}</p>
-            {showRecoveryPrompt ? (
-              <div className="flex gap-3">
-                <Button variant="secondary" className="uppercase tracking-wider" onClick={() => openRecovery()}>
-                  Restore Identity
-                </Button>
-                <Link href="/">
-                  <Button variant="ghost" className="uppercase tracking-wider">
-                    Back
-                  </Button>
-                </Link>
-              </div>
-            ) : (
-              <Link href="/">
-                <Button variant="secondary" className="uppercase tracking-wider">
-                  Back to discovery
-                </Button>
-              </Link>
-            )}
-          </div>
-        )}
-
-        {canChat && (
-          <div className="relative flex flex-1 flex-col min-h-0">
-            <div className="relative flex-1 min-h-0 flex flex-col">
-              {quoteLoading && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
-                  <div className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-5 py-3">
-                    <div className="h-4 w-4 animate-spin rounded-full border border-neutral-400 border-t-transparent" />
-                    <span className="text-[11px] uppercase tracking-wider text-neutral-400">
-                      Loading…
-                    </span>
+        {showOptions && roomMeta ? (
+          <RoomOptionsPage
+            roomId={roomId}
+            roomName={roomMeta.room.name}
+            roomLink={roomMeta.room.roomLink}
+            members={members as RoomMemberEntry[]}
+            onlineUserIds={onlineUserIds}
+            viewerRole={(roomMeta.membership?.role || "MEMBER") as ViewerRole}
+            isDisabled={roomDisabled}
+            isAdmin={roomMeta.membership?.role === "OWNER" || roomMeta.membership?.role === "ADMIN"}
+            onToggleDisable={isOwner ? handleToggleDisable : undefined}
+            onLeaveRequest={handleLeaveRequest}
+            onKickout={handleKickout}
+            onRoleChange={handleRoleChange}
+            onMembersRefresh={refreshMembers}
+          />
+        ) : (
+          <>
+            {!canChat && !isPending && status !== "Connecting..." && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+                <p className="text-sm text-neutral-400">{status}</p>
+                {showRecoveryPrompt ? (
+                  <div className="flex gap-3">
+                    <Button variant="secondary" className="uppercase tracking-wider" onClick={() => openRecovery()}>
+                      Restore Identity
+                    </Button>
+                    <Link href="/">
+                      <Button variant="ghost" className="uppercase tracking-wider">
+                        Back
+                      </Button>
+                    </Link>
                   </div>
-                </div>
-              )}
-              <MessageList
-                messages={messages}
-                loadingOlder={loadingOlder}
-                hasMore={Boolean(historyCursor)}
-                onLoadOlder={() => void loadOlder()}
-                loadingNewer={loadingNewer}
-                hasNewer={hasNewer}
-                onLoadNewer={() => void loadNewerSentinel()}
-                listRef={listRef}
-                onScroll={handleScroll}
-                roomKey={roomKeyRef.current ?? undefined}
-                onReply={handleReply}
-                onEdit={handleEditMessage}
-                onDelete={handleDeleteMessage}
-                onQuoteClick={handleQuoteClick}
-                onShowMenu={handleContextMenu}
-                jumpTargetId={jumpTargetId}
-              />
-
-              {/* Down-arrow button when not at bottom */}
-              {!isAtBottom && (
-                <DownArrowButton
-                  newMessagesCount={newMessagesCount}
-                  onClick={() => void handleScrollToBottom()}
-                  loading={downArrowLoading}
-                />
-              )}
-            </div>
-
-            {typingSummary && (
-              <p className="shrink-0 px-4 pb-1 text-[11px] text-neutral-500">
-                {typingSummary}
-              </p>
+                ) : (
+                  <Link href="/">
+                    <Button variant="secondary" className="uppercase tracking-wider">
+                      Back to discovery
+                    </Button>
+                  </Link>
+                )}
+              </div>
             )}
 
-            <ChatInput
-              draft={editingMessageId ? editingDraft : draft}
-              onChange={(v) => {
-                if (editingMessageId) {
-                  setEditingDraft(v);
-                } else {
-                  void onDraftChange(v);
-                }
-              }}
-              onSend={() => {
-                if (editingMessageId) {
-                  void handleSaveEdit();
-                } else {
-                  void onSend();
-                }
-              }}
-              onSendMedia={(file) => void onSendMedia(file)}
-              onGifClick={() => setGifPickerOpen(true)}
-              disabled={!canChat || roomDisabled}
-              mediaSending={mediaSending}
-              replyContext={replyContext}
-              onClearReply={() => setReplyContext(null)}
-              editingMessageId={editingMessageId}
-              onSaveEdit={() => void handleSaveEdit()}
-              onCancelEdit={() => {
-                setEditingMessageId(null);
-                setEditingDraft("");
-                setDraft("");
-              }}
-            />
-          </div>
-        )}
+            {canChat && (
+              <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden">
+                <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+                  {quoteLoading && (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
+                      <div className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-5 py-3">
+                        <div className="h-4 w-4 animate-spin rounded-full border border-neutral-400 border-t-transparent" />
+                        <span className="text-[11px] uppercase tracking-wider text-neutral-400">
+                          Loading…
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <MessageList
+                    messages={messages}
+                    loadingOlder={loadingOlder}
+                    hasMore={Boolean(historyCursor)}
+                    onLoadOlder={() => void loadOlder()}
+                    loadingNewer={loadingNewer}
+                    hasNewer={hasNewer}
+                    onLoadNewer={() => void loadNewerSentinel()}
+                    listRef={setListRef}
+                    onScroll={handleScroll}
+                    roomKey={roomKeyRef.current ?? undefined}
+                    onReply={handleReply}
+                    onEdit={handleEditMessage}
+                    onDelete={handleDeleteMessage}
+                    onQuoteClick={handleQuoteClick}
+                    onShowMenu={handleContextMenu}
+                    jumpTargetId={jumpTargetId}
+                  />
 
-        {status === "Connecting..." && !isPending && (
-          <div className="flex flex-1 items-center justify-center">
-            <p className="text-xs uppercase tracking-wider text-neutral-500">Connecting...</p>
-          </div>
+                  {/* Down-arrow button when not at bottom */}
+                  {!isAtBottom && (
+                    <DownArrowButton
+                      newMessagesCount={newMessagesCount}
+                      onClick={() => void handleScrollToBottom()}
+                      loading={downArrowLoading}
+                    />
+                  )}
+                </div>
+
+                {typingSummary && (
+                  <p className="shrink-0 px-4 pb-1 text-[11px] text-neutral-500">
+                    {typingSummary}
+                  </p>
+                )}
+
+                <ChatInput
+                  draft={editingMessageId ? editingDraft : draft}
+                  onChange={(v) => {
+                    if (editingMessageId) {
+                      setEditingDraft(v);
+                    } else {
+                      void onDraftChange(v);
+                    }
+                  }}
+                  onSend={() => {
+                    if (editingMessageId) {
+                      void handleSaveEdit();
+                    } else {
+                      void onSend();
+                    }
+                  }}
+                  onSendMedia={(file) => void onSendMedia(file)}
+                  onGifClick={() => setGifPickerOpen(true)}
+                  disabled={!canChat || roomDisabled}
+                  mediaSending={mediaSending}
+                  replyContext={replyContext}
+                  onClearReply={() => setReplyContext(null)}
+                  editingMessageId={editingMessageId}
+                  onSaveEdit={() => void handleSaveEdit()}
+                  onCancelEdit={() => {
+                    setEditingMessageId(null);
+                    setEditingDraft("");
+                    setDraft("");
+                  }}
+                />
+              </div>
+            )}
+
+            {status === "Connecting..." && !isPending && (
+              <div className="flex flex-1 items-center justify-center">
+                <p className="text-xs uppercase tracking-wider text-neutral-500">Connecting...</p>
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      <MembersPanel
-        open={membersOpen}
-        onClose={() => setMembersOpen(false)}
-        members={members}
-        onlineUserIds={onlineUserIds}
-        roomLink={roomMeta?.room.roomLink ?? ""}
-        roomId={roomId}
-        isAdmin={roomMeta?.membership?.role === "OWNER" || roomMeta?.membership?.role === "ADMIN"}
-      />
 
       <GifPicker
         open={gifPickerOpen}
@@ -1552,6 +1692,25 @@ export default function RoomChatPage() {
         onConfirm={() => void handleConfirmDelete()}
         onCancel={() => setPendingDeleteId(null)}
       />
+
+      {/* Leave Confirmation Dialog */}
+      {leaveDialogOpen && (
+        <LeaveConfirmDialog
+          loading={leaveLoading}
+          onConfirm={() => void executeLeave()}
+          onCancel={() => setLeaveDialogOpen(false)}
+        />
+      )}
+
+      {/* Succession Dialog */}
+      {successionDialogOpen && (
+        <SuccessionDialog
+          loading={leaveLoading}
+          members={successionMembers}
+          onConfirm={(promoteToAdmin) => void executeLeave(promoteToAdmin)}
+          onCancel={() => setSuccessionDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -407,7 +407,7 @@ interface MessageListProps {
   loadingNewer?: boolean;
   hasNewer?: boolean;
   onLoadNewer?: () => void;
-  listRef: React.RefObject<HTMLDivElement | null>;
+  listRef: React.Ref<HTMLDivElement>;
   onScroll: () => void;
   roomKey?: CryptoKey;
   onReply?: (message: UiMessage) => void;
