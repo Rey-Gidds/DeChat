@@ -32,7 +32,7 @@ export const auth = betterAuth({
     },
     emailAndPassword: {
         enabled: true,
-        requireEmailVerification: true,
+        requireEmailVerification: false,
         sendResetPassword: async ({ user, token }) => {
             const url = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
             
