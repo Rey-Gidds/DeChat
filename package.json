@@ -6,17 +6,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:frontend": "npm run dev --workspace=@dechat/frontend",
-    "dev:server": "npm run dev --workspace=@dechat/websocket-server",
-    "build:frontend": "npm run build --workspace=@dechat/frontend",
-    "build:server": "npm run build --workspace=@dechat/websocket-server",
+    "dev:frontend": "npm run dev --workspace=packages/frontend",
+    "dev:server": "npm run dev --workspace=packages/websocket-server",
+    "build:frontend": "npm run build --workspace=packages/frontend",
+    "build:server": "npm run build --workspace=packages/websocket-server",
     "install:all": "npm install"
-  },
-  "devDependencies": {
-    "autoprefixer": "^10.5.0",
-    "postcss": "^8.5.15"
-  },
-  "dependencies": {
-    "date-fns": "^4.3.0"
   }
 }

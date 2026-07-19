@@ -8,7 +8,7 @@
 import type { OutboxEntry } from "@/lib/outbox-db";
 import type { UiMessage } from "@/components/chat/message-list";
 import { getOutboxEntriesByRoom } from "@/lib/outbox-db";
-import type { ReplyToInfo } from "./models";
+import type { ReplyToInfo, MediaMetadata } from "./models";
 
 export function buildOptimisticUiMessage(
   entry: OutboxEntry,
@@ -35,7 +35,7 @@ export function buildOptimisticUiMessage(
  */
 export function reconcileOptimisticMessage(
   clientMessageId: string,
-  persistedMessage: { id: string; createdAt: string; senderName?: string | null; senderUserIndex?: number | null; messageType?: "text" | "image" | "video" | "gif"; replyTo?: ReplyToInfo | null },
+  persistedMessage: { id: string; createdAt: string; senderName?: string | null; senderUserIndex?: number | null; messageType?: "text" | "image" | "video" | "gif"; replyTo?: ReplyToInfo | null; mediaMetadata?: MediaMetadata },
   decryptedBody: string,
   currentUserId: string,
   setMessages: React.Dispatch<React.SetStateAction<UiMessage[]>>
@@ -53,6 +53,7 @@ export function reconcileOptimisticMessage(
             senderUserIndex: persistedMessage.senderUserIndex ?? null,
             messageType: persistedMessage.messageType ?? "text",
             replyTo: persistedMessage.replyTo ?? null,
+            mediaMetadata: persistedMessage.mediaMetadata ?? m.mediaMetadata,
           }
         : m
     )

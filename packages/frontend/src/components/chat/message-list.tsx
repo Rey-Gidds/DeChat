@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaMetadata, GifMetadata, ReplyToInfo } from "@/lib/models";
 import { MediaMessage } from "./media-message";
 import { decryptReplyPreview } from "@/lib/quoted-message";
+import { getRoomKeyVersion } from "@/lib/crypto";
 
 export interface UiMessage {
   id: string;
@@ -24,17 +25,21 @@ export interface UiMessage {
   status?: "pending" | "retrying" | "failed";
   clientMessageId?: string;
   onRetry?: () => void;
+  progress?: number;
+  progressStage?: "compressing" | "uploading" | "failed";
 }
 
 interface MessageBubbleProps {
   message: UiMessage;
   showSender?: boolean;
   roomKey?: CryptoKey;
+  roomId?: string;
   onReply?: (message: UiMessage) => void;
   onEdit?: (message: UiMessage) => void;
   onDelete?: (message: UiMessage) => void;
   onQuoteClick?: (messageId: string) => void;
   onShowMenu?: (message: UiMessage, x: number, y: number) => void;
+  onImageClick?: (message: UiMessage) => void;
   highlighted?: boolean;
 }
 
@@ -53,11 +58,13 @@ export function MessageBubble({
   message,
   showSender,
   roomKey,
+  roomId,
   onReply,
   onEdit,
   onDelete,
   onQuoteClick,
   onShowMenu,
+  onImageClick,
   highlighted,
 }: MessageBubbleProps) {
   const isOwn = message.isOwn;
@@ -77,16 +84,37 @@ export function MessageBubble({
 
   // Decrypt reply preview once
   const [replyPreview, setReplyPreview] = useState<string | null>(null);
-  const replyDecoded = useRef(false);
+  useEffect(() => {
+    if (!message.replyTo) return;
 
-  if (message.replyTo && !replyDecoded.current) {
-    replyDecoded.current = true;
-    if (roomKey) {
-      decryptReplyPreview(message.replyTo, roomKey).then(setReplyPreview);
+    let cancelled = false;
+    let keyPromise: Promise<CryptoKey | null>;
+
+    // If the preview was encrypted with a specific key version, look it up.
+    // Otherwise fall back to the current roomKey (backward compat with old messages).
+    if (message.replyTo.previewKeyVersion != null && roomId) {
+      keyPromise = getRoomKeyVersion(roomId, message.replyTo.previewKeyVersion);
+    } else if (roomKey) {
+      keyPromise = Promise.resolve(roomKey);
     } else {
       setReplyPreview("message unavailable");
+      return;
     }
-  }
+
+    keyPromise.then((key) => {
+      if (cancelled || !key) {
+        if (!cancelled) setReplyPreview("message unavailable");
+        return;
+      }
+      return decryptReplyPreview(message.replyTo!, key);
+    }).then((preview) => {
+      if (!cancelled && preview) setReplyPreview(preview);
+    }).catch(() => {
+      if (!cancelled) setReplyPreview("message unavailable");
+    });
+
+    return () => { cancelled = true; };
+  }, [message.replyTo, roomKey, roomId]);
 
   // Show info button briefly on hover (desktop only, via CSS already)
   // On mobile we show it when long-press fires or as fallback
@@ -318,7 +346,16 @@ export function MessageBubble({
                 height={meta.height}
                 thumbnailKey={"thumbnailKey" in meta ? meta.thumbnailKey : undefined}
                 thumbnailIv={"thumbnailIv" in meta ? meta.thumbnailIv : undefined}
+                caption={"caption" in meta ? meta.caption : undefined}
+                ivBase={"ivBase" in meta ? meta.ivBase : undefined}
+                chunkSize={"chunkSize" in meta ? meta.chunkSize : undefined}
                 isOwn={isOwn}
+                onImageClick={onImageClick ? () => onImageClick(message) : undefined}
+                localUrl={meta.localUrl}
+                progress={message.progress}
+                progressStage={message.progressStage}
+                status={message.status}
+                onRetry={message.onRetry}
               />
             ) : isGif && gifMeta ? (
               <div className="relative overflow-hidden rounded-sm">
@@ -337,6 +374,13 @@ export function MessageBubble({
               </div>
             ) : (
               <p className="whitespace-pre-wrap break-words">{message.body}</p>
+            )}
+
+            {/* ── Caption (from media metadata) ── */}
+            {isMedia && meta && "caption" in meta && meta.caption && (
+              <p className="whitespace-pre-wrap break-words px-3 pt-1 text-sm leading-relaxed">
+                {meta.caption}
+              </p>
             )}
 
             {/* ── Timestamp + status + edited tag ── */}
@@ -410,12 +454,16 @@ interface MessageListProps {
   listRef: React.Ref<HTMLDivElement>;
   onScroll: () => void;
   roomKey?: CryptoKey;
+  roomId?: string;
   onReply?: (message: UiMessage) => void;
   onEdit?: (message: UiMessage) => void;
   onDelete?: (message: UiMessage) => void;
   onQuoteClick?: (messageId: string) => void;
   onShowMenu?: (message: UiMessage, x: number, y: number) => void;
+  onImageClick?: (message: UiMessage) => void;
   jumpTargetId?: string | null;
+  /** When true, suppresses the empty-state placeholder (e.g. during bootstrapping). */
+  hideEmpty?: boolean;
 }
 
 export function MessageList({
@@ -429,12 +477,15 @@ export function MessageList({
   listRef,
   onScroll,
   roomKey,
+  roomId,
   onReply,
   onEdit,
   onDelete,
   onQuoteClick,
   onShowMenu,
+  onImageClick,
   jumpTargetId,
+  hideEmpty,
 }: MessageListProps) {
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
@@ -485,9 +536,11 @@ export function MessageList({
       )}
 
       {messages.length === 0 ? (
-        <div className="flex h-full min-h-[200px] items-center justify-center">
-          <p className="text-xs text-neutral-500">No messages yet. Say hello.</p>
-        </div>
+        hideEmpty ? null : (
+          <div className="flex h-full min-h-[200px] items-center justify-center">
+            <p className="text-xs text-neutral-500">No messages yet. Say hello.</p>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {messages.map((message) => (
@@ -496,7 +549,9 @@ export function MessageList({
               message={message}
               showSender
               roomKey={roomKey}
+              roomId={roomId}
               onReply={onReply}
+              onImageClick={onImageClick}
               onEdit={onEdit}
               onDelete={onDelete}
               onQuoteClick={onQuoteClick}

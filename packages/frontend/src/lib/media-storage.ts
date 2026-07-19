@@ -1,10 +1,16 @@
 /**
  * Media storage layer: presigned URL request, R2 upload, CDN fetch,
- * in-memory cache, in-flight request deduplication, and the useMediaLoader hook.
+ * in-memory cache, in-flight request deduplication, useMediaLoader hook,
+ * and progressive Range+MSE video streaming (Phase D).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { decryptMedia } from "./media-crypto";
+import {
+  decryptMedia,
+  deriveChunkIV,
+  decryptChunk,
+  getRangeForPlaintextRange,
+} from "./media-crypto";
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -75,7 +81,7 @@ function getCdnBaseUrl(): string {
   return process.env.NEXT_PUBLIC_R2_PUBLIC_URL || "";
 }
 
-// ─── Fetch + Decrypt ──────────────────────────────────────────────
+// ─── Fetch + Decrypt (full download) ──────────────────────────────
 
 /**
  * Fetch an encrypted blob from the CDN and decrypt it with the room key.
@@ -105,6 +111,75 @@ export async function fetchAndDecryptMedia(
   // Determine MIME type from decrypted data or fall back to expected
   const blob = new Blob([decrypted], { type: expectedMimeType });
   return { blob, mimeType: expectedMimeType };
+}
+
+// ─── Range Fetch (progressive streaming) ──────────────────────────
+
+/**
+ * Fetch a byte range of an encrypted object from the CDN.
+ * R2 supports HTTP Range requests on objects.
+ */
+export async function fetchMediaRange(
+  objectKey: string,
+  start: number,
+  end: number
+): Promise<ArrayBuffer> {
+  const cdnBase = getCdnBaseUrl();
+  if (!cdnBase) {
+    throw new Error("R2 public URL not configured");
+  }
+
+  const url = `${cdnBase}/${objectKey}`;
+  const response = await fetch(url, {
+    headers: {
+      Range: `bytes=${start}-${end - 1}`,
+    },
+  });
+
+  if (!response.ok && response.status !== 206) {
+    throw new Error(`Failed to fetch media range (${response.status})`);
+  }
+
+  return response.arrayBuffer();
+}
+
+/**
+ * Probe the total encrypted file size via a HEAD request with Range.
+ * R2 returns Content-Range on a 206 response for Range: bytes=0-0.
+ */
+export async function probeEncryptedSize(
+  objectKey: string
+): Promise<number> {
+  const cdnBase = getCdnBaseUrl();
+  if (!cdnBase) {
+    throw new Error("R2 public URL not configured");
+  }
+
+  const url = `${cdnBase}/${objectKey}`;
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { Range: "bytes=0-0" },
+  });
+
+  if (response.status === 206) {
+    // Content-Range: bytes 0-0/{total}
+    const cr = response.headers.get("Content-Range");
+    if (cr) {
+      const match = cr.match(/\/(\d+)$/);
+      if (match) {
+        return parseInt(match[1], 10);
+      }
+    }
+  }
+
+  // Fallback: try full GET (expensive but reliable)
+  const fullResponse = await fetch(url, { method: "HEAD" });
+  if (fullResponse.ok) {
+    const len = fullResponse.headers.get("Content-Length");
+    if (len) return parseInt(len, 10);
+  }
+
+  throw new Error("Could not determine encrypted file size");
 }
 
 // ─── Load Media (with cache + dedup) ──────────────────────────────
@@ -272,6 +347,215 @@ export async function uploadEncryptedBlob(
   }
 }
 
+// ─── Progressive Video Streaming (MSE + Range) ───────────────────
+
+const FETCH_CHUNK_SIZE = 2 * 1024 * 1024; // 2 MiB per fetch request
+const MSE_APPEND_TIMEOUT = 10_000; // 10s timeout for sourceBuffer updateend
+
+interface ProgressiveVideoState {
+  blobUrl: string | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+/**
+ * Internal hook that drives progressive video playback via MediaSource Extensions.
+ *
+ * Flow:
+ * 1. HEAD/range-0 probe → total encrypted size
+ * 2. Create MediaSource → get object URL
+ * 3. On sourceopen: add SourceBuffer, start chunked Range fetches
+ * 4. Each chunk: fetch range → derive chunk IV → decrypt → append to SourceBuffer
+ * 5. Signal endOfStream when all chunks have been appended
+ */
+function useProgressiveVideo(
+  objectKey: string,
+  roomKey: CryptoKey,
+  ivBase: string,
+  chunkSize: number,
+  mimeType: string
+): ProgressiveVideoState {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const retryCountRef = useRef(0);
+  const mountedRef = useRef(true);
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const abortRef = useRef(false);
+
+  // Derive the MP4 codec string from the mimeType
+  const codec =
+    mimeType === "video/mp4" ? 'avc1.42E01E, mp4a.40.2' : undefined;
+
+  const startPlayback = useCallback(() => {
+    if (!objectKey || !roomKey || !ivBase || !chunkSize) return;
+
+    setLoading(true);
+    setError(null);
+    abortRef.current = false;
+
+    const cdnBase = getCdnBaseUrl();
+    if (!cdnBase) return;
+
+    const ms = new MediaSource();
+    mediaSourceRef.current = ms;
+    const url = URL.createObjectURL(ms);
+    setBlobUrl(url);
+
+    let totalEncryptedSize = 0;
+    let currentChunkIndex = 0;
+    let chunksAppended = 0;
+    let totalChunks = 0;
+
+    ms.addEventListener("sourceopen", () => {
+      if (abortRef.current) return;
+
+      const sb = (ms as any).addSourceBuffer(
+        codec ? `video/mp4; codecs="${codec}"` : mimeType
+      );
+      sourceBufferRef.current = sb;
+
+      // Step 1: Probe total encrypted size
+      probeEncryptedSize(objectKey)
+        .then((size) => {
+          if (abortRef.current) return;
+          totalEncryptedSize = size;
+
+          // Each encrypted chunk = chunkSize + 16 (GCM tag)
+          const encryptedChunkSize = chunkSize + 16;
+          totalChunks = Math.ceil(size / encryptedChunkSize);
+
+          // Step 2: Start fetching chunks
+          fetchNextChunks();
+        })
+        .catch((err) => {
+          if (!abortRef.current) {
+            setError(err instanceof Error ? err.message : "Failed to probe video size");
+            setLoading(false);
+          }
+        });
+
+      async function fetchNextChunks() {
+        if (abortRef.current) return;
+
+        while (currentChunkIndex < totalChunks) {
+          if (abortRef.current) return;
+
+          // Calculate ciphertext range for this batch of chunks
+          const encryptedChunkSize = chunkSize + 16;
+          const rangeStart = currentChunkIndex * encryptedChunkSize;
+          const rangeEnd = Math.min(
+            (currentChunkIndex + 1) * encryptedChunkSize,
+            totalEncryptedSize
+          );
+
+          try {
+            const encryptedChunk = await fetchMediaRange(
+              objectKey,
+              rangeStart,
+              rangeEnd
+            );
+
+            if (abortRef.current) return;
+
+            // Derive IV for this chunk
+            const iv = deriveChunkIV(ivBase, currentChunkIndex);
+
+            // Decrypt the chunk
+            const decryptedChunk = await decryptChunk(
+              encryptedChunk,
+              roomKey,
+              iv
+            );
+
+            if (abortRef.current) return;
+
+            // Wait for sourceBuffer to be ready
+            if (sb.updating) {
+              await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                  reject(new Error("SourceBuffer updateend timeout"));
+                }, MSE_APPEND_TIMEOUT);
+                sb.addEventListener(
+                  "updateend",
+                  () => {
+                    clearTimeout(timeout);
+                    resolve();
+                  },
+                  { once: true }
+                );
+              });
+            }
+
+            if (abortRef.current) return;
+
+            // Append decrypted chunk to SourceBuffer
+            sb.appendBuffer(decryptedChunk);
+            currentChunkIndex++;
+            chunksAppended++;
+
+            // Update loading state after first chunk
+            if (chunksAppended === 1) {
+              setLoading(false);
+            }
+          } catch (err) {
+            if (!abortRef.current) {
+              setError(
+                err instanceof Error ? err.message : "Failed to stream video chunk"
+              );
+              setLoading(false);
+              return;
+            }
+          }
+        }
+
+        // All chunks fetched and appended
+        if (ms.readyState === "open") {
+          try {
+            ms.endOfStream();
+          } catch {
+            // Ignore — may already be ended by browser
+          }
+        }
+        setLoading(false);
+      }
+    });
+  }, [objectKey, roomKey, ivBase, chunkSize, mimeType, codec]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    startPlayback();
+
+    return () => {
+      mountedRef.current = false;
+      abortRef.current = true;
+
+      // Clean up MSE
+      if (mediaSourceRef.current?.readyState === "open") {
+        try {
+          mediaSourceRef.current.endOfStream();
+        } catch {
+          // ignore
+        }
+      }
+      sourceBufferRef.current = null;
+      mediaSourceRef.current = null;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objectKey, roomKey, ivBase, chunkSize, mimeType]);
+
+  const retry = useCallback(() => {
+    retryCountRef.current += 1;
+    startPlayback();
+  }, [startPlayback]);
+
+  return { blobUrl, loading, error, retry };
+}
+
 // ─── useMediaLoader Hook ──────────────────────────────────────────
 
 interface UseMediaLoaderResult {
@@ -282,13 +566,21 @@ interface UseMediaLoaderResult {
   retry: () => void;
 }
 
+export interface ProgressiveVideoParams {
+  ivBase: string;
+  chunkSize: number;
+}
+
 /**
  * React hook that loads and caches encrypted media from CDN.
- * - Checks in-memory cache first
- * - Deduplicates in-flight requests
- * - Fetches from CDN and decrypts with room key
- * - Returns a blob URL for rendering
- * - Cleans up object URLs on unmount
+ *
+ * For images (and videos without progressive params):
+ *   - Checks in-memory cache first, deduplicates in-flight requests,
+ *     fetches from CDN, decrypts with room key, returns a blob URL.
+ *
+ * For videos with progressive params (ivBase + chunkSize):
+ *   - Uses MediaSource Extensions + HTTP Range requests to stream
+ *     and decrypt chunks progressively.
  */
 export function useMediaLoader(
   objectKey: string | undefined,
@@ -296,7 +588,8 @@ export function useMediaLoader(
   ivBase64: string | undefined,
   mimeType: string | undefined,
   thumbnailObjectKey?: string,
-  thumbnailIv?: string
+  thumbnailIv?: string,
+  progressiveParams?: ProgressiveVideoParams
 ): UseMediaLoaderResult {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [thumbnailBlobUrl, setThumbnailBlobUrl] = useState<string | null>(null);
@@ -305,8 +598,49 @@ export function useMediaLoader(
   const retryCountRef = useRef(0);
   const mountedRef = useRef(true);
 
-  const load = useCallback(() => {
+  // Determine whether to use progressive streaming for this video
+  const isProgressiveVideo =
+    mimeType?.startsWith("video/") &&
+    progressiveParams?.ivBase != null &&
+    progressiveParams?.chunkSize != null &&
+    typeof MediaSource !== "undefined" &&
+    MediaSource.isTypeSupported(mimeType);
+
+  // Always call useProgressiveVideo (hooks rules: unconditional).
+  // When not a progressive video, pass empty/invalid args and ignore the result.
+  const progressiveResult = useProgressiveVideo(
+    isProgressiveVideo ? objectKey! : "",
+    isProgressiveVideo ? roomKey! : null as unknown as CryptoKey,
+    progressiveParams?.ivBase ?? "",
+    progressiveParams?.chunkSize ?? 0,
+    mimeType ?? ""
+  );
+
+  // ── Thumbnail loading (unconditional effect — shared by both paths) ──
+  useEffect(() => {
+    if (!thumbnailObjectKey || !thumbnailIv || !roomKey) return;
+    let cancelled = false;
+
+    loadMedia(thumbnailObjectKey, roomKey, thumbnailIv, "image/webp")
+      .then((result) => {
+        if (!cancelled) {
+          const url = URL.createObjectURL(result.blob);
+          setThumbnailBlobUrl(url);
+        }
+      })
+      .catch(() => {
+        // Thumbnail failure is non-fatal
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [thumbnailObjectKey, thumbnailIv, roomKey]);
+
+  // ── Full-download path (for images and non-progressive videos) ──
+  const fullLoad = useCallback(() => {
     if (!objectKey || !roomKey || !ivBase64 || !mimeType) return;
+    if (isProgressiveVideo) return; // Don't full-download when progressive is active
 
     setLoading(true);
     setError(null);
@@ -323,24 +657,21 @@ export function useMediaLoader(
         setError(err instanceof Error ? err.message : "Failed to load media");
         setLoading(false);
       });
+  }, [objectKey, roomKey, ivBase64, mimeType, isProgressiveVideo]);
 
-    // Load thumbnail if present
-    if (thumbnailObjectKey && thumbnailIv && roomKey) {
-      loadMedia(thumbnailObjectKey, roomKey, thumbnailIv, "image/webp")
-        .then((result) => {
-          if (!mountedRef.current) return;
-          const url = URL.createObjectURL(result.blob);
-          setThumbnailBlobUrl(url);
-        })
-        .catch(() => {
-          // Thumbnail failure is non-fatal
-        });
-    }
-  }, [objectKey, roomKey, ivBase64, mimeType, thumbnailObjectKey, thumbnailIv]);
+  const fullRetry = useCallback(() => {
+    retryCountRef.current += 1;
+    fullLoad();
+  }, [fullLoad]);
 
+  // ── Progressive mode: use progressiveResult, ignore fullLoad ──
+  // ── Non-progressive mode: ignore progressiveResult, use fullLoad ──
   useEffect(() => {
     mountedRef.current = true;
-    load();
+
+    if (!isProgressiveVideo) {
+      fullLoad();
+    }
 
     return () => {
       mountedRef.current = false;
@@ -348,14 +679,20 @@ export function useMediaLoader(
       if (thumbnailBlobUrl) URL.revokeObjectURL(thumbnailBlobUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objectKey, roomKey, ivBase64, mimeType, thumbnailObjectKey, thumbnailIv]);
+  }, [objectKey, roomKey, ivBase64, mimeType, isProgressiveVideo]);
 
-  const retry = useCallback(() => {
-    retryCountRef.current += 1;
-    load();
-  }, [load]);
+  // Derive final return value based on mode
+  if (isProgressiveVideo) {
+    return {
+      blobUrl: progressiveResult.blobUrl,
+      thumbnailBlobUrl,
+      loading: progressiveResult.loading,
+      error: progressiveResult.error,
+      retry: progressiveResult.retry,
+    };
+  }
 
-  return { blobUrl, thumbnailBlobUrl, loading, error, retry };
+  return { blobUrl, thumbnailBlobUrl, loading, error, retry: fullRetry };
 }
 
 // ─── Utility ──────────────────────────────────────────────────────

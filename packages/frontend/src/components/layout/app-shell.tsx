@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "@/lib/auth-client";
@@ -49,7 +50,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-40 border-b border-neutral-800 bg-black/95 backdrop-blur-sm">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
             <Link href="/" className="flex items-center gap-2">
-              <span className="inline-block h-6 w-6 border border-neutral-600 bg-neutral-900" />
+              <Image src="/icons/Gemini_Generated_Image_nsovoqnsovoqnsov.png" alt="DeChat" width={26} height={26} />
               <span className="text-sm font-semibold tracking-[0.2em] text-white uppercase">
                 DeChat
               </span>

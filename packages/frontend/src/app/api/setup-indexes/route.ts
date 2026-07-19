@@ -46,6 +46,9 @@ export async function GET(req: Request) {
     await db.collection("room_messages").createIndex({ roomId: 1, createdAt: -1, _id: -1 });
     results.push("Created pagination index on room_messages(roomId, createdAt, _id)");
 
+    await db.collection("room_messages").createIndex({ roomId: 1, createdAt: 1, _id: 1 });
+    results.push("Created ascending synchronization index on room_messages(roomId, createdAt, _id)");
+
     // Sparse index for reply-to lookups (admin tools / debugging)
     await db.collection("room_messages").createIndex(
       { "replyTo.messageId": 1 },

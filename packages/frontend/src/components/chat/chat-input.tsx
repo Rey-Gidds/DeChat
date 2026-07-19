@@ -18,6 +18,7 @@ interface ChatInputProps {
   onSendMedia?: (file: File) => void;
   onGifClick?: () => void;
   disabled?: boolean;
+  sendDisabled?: boolean;
   mediaSending?: boolean;
   replyContext?: ReplyContext | null;
   onClearReply?: () => void;
@@ -33,6 +34,7 @@ export function ChatInput({
   onSendMedia,
   onGifClick,
   disabled,
+  sendDisabled,
   mediaSending,
   replyContext,
   onClearReply,
@@ -181,7 +183,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={onSaveEdit}
-                disabled={disabled || !draft.trim()}
+                disabled={disabled || sendDisabled || !draft.trim()}
                 className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Save edit"
               >
@@ -192,7 +194,7 @@ export function ChatInput({
             <button
               type="button"
               onClick={onSend}
-              disabled={disabled || mediaSending || !draft.trim()}
+              disabled={disabled || sendDisabled || mediaSending || !draft.trim()}
               style={{ alignSelf: "flex-end" }}
               className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Send message"

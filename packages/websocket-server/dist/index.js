@@ -10,6 +10,7 @@ const socket_io_1 = require("socket.io");
 const cors_1 = __importDefault(require("cors"));
 const ws_ticket_1 = require("./ws-ticket");
 const db_1 = require("./db");
+const mongodb_1 = require("mongodb");
 const presence_store_1 = require("./presence-store");
 const app = (0, express_1.default)();
 const allowedOrigin = process.env.CORS_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -249,7 +250,7 @@ io.on("connection", (socket) => {
             ack?.({ ok: false, error: "Encrypted payload is too large" });
             return;
         }
-        if (!["text", "image", "file", "gif"].includes(messageType)) {
+        if (!["text", "image", "video", "gif"].includes(messageType)) {
             ack?.({ ok: false, error: "Invalid messageType" });
             return;
         }
@@ -257,6 +258,41 @@ io.on("connection", (socket) => {
         const clientMessageId = typeof payload?.clientMessageId === "string"
             ? payload.clientMessageId.slice(0, 64)
             : null;
+        // Validate replyTo payload if present
+        const replyToPayload = payload?.replyTo;
+        let replyTo = null;
+        if (replyToPayload) {
+            if (typeof replyToPayload.messageId !== "string" ||
+                typeof replyToPayload.senderId !== "string" ||
+                typeof replyToPayload.senderName !== "string" ||
+                !["text", "image", "video", "gif"].includes(replyToPayload.messageType)) {
+                ack?.({ ok: false, error: "Invalid replyTo payload" });
+                return;
+            }
+            if (!/^[a-fA-F0-9]{24}$/.test(replyToPayload.messageId)) {
+                ack?.({ ok: false, error: "Invalid replyTo.messageId format" });
+                return;
+            }
+            const dbInstance = await (0, db_1.getDb)();
+            const quoted = await dbInstance.collection("room_messages").findOne({
+                _id: new mongodb_1.ObjectId(replyToPayload.messageId),
+                roomId: new mongodb_1.ObjectId(roomId),
+            });
+            if (!quoted) {
+                ack?.({ ok: false, error: "REPLY_TARGET_NOT_FOUND" });
+                return;
+            }
+            replyTo = {
+                messageId: replyToPayload.messageId,
+                senderId: replyToPayload.senderId,
+                senderName: replyToPayload.senderName,
+                senderUserIndex: replyToPayload.senderUserIndex ?? null,
+                messageType: replyToPayload.messageType,
+                previewIv: replyToPayload.previewIv ?? null,
+                previewCiphertext: replyToPayload.previewCiphertext ?? null,
+                previewAuthTag: replyToPayload.previewAuthTag ?? null,
+            };
+        }
         try {
             const roomKeyVersion = typeof payload?.roomKeyVersion === "number" ? payload.roomKeyVersion : undefined;
             const savedMessage = await withTimeout((0, db_1.persistEncryptedMessage)({
@@ -267,6 +303,7 @@ io.on("connection", (socket) => {
                 authTag,
                 messageType,
                 roomKeyVersion,
+                replyTo: replyTo,
             }), DB_ACK_TIMEOUT_MS, "Database request timed out");
             const senderInfo = await (0, db_1.getSenderInfo)(roomId, socket.data.userId);
             const outbound = {
@@ -278,6 +315,19 @@ io.on("connection", (socket) => {
                 authTag,
                 messageType,
                 ...(roomKeyVersion !== undefined ? { roomKeyVersion } : {}),
+                replyTo: replyTo
+                    ? {
+                        messageId: replyTo.messageId,
+                        senderId: replyTo.senderId,
+                        senderName: replyTo.senderName,
+                        senderUserIndex: replyTo.senderUserIndex ?? null,
+                        messageType: replyTo.messageType,
+                        previewIv: replyTo.previewIv ?? null,
+                        previewCiphertext: replyTo.previewCiphertext ?? null,
+                        previewAuthTag: replyTo.previewAuthTag ?? null,
+                    }
+                    : null,
+                editedAt: null,
                 createdAt: savedMessage.createdAt,
                 senderName: senderInfo.name,
                 senderUserIndex: senderInfo.userIndex,
@@ -295,6 +345,156 @@ io.on("connection", (socket) => {
             ack?.({
                 ok: false,
                 error: err instanceof Error ? err.message : "Failed to persist message",
+            });
+        }
+    });
+    socket.on("edit_message", async (payload, ack) => {
+        const roomId = payload?.roomId || socket.data.roomId;
+        if (!roomId) {
+            ack?.({ ok: false, error: "roomId required" });
+            return;
+        }
+        if (!payload?.messageId) {
+            ack?.({ ok: false, error: "messageId required" });
+            return;
+        }
+        const member = await (0, db_1.isActiveMember)(roomId, socket.data.userId);
+        if (!member) {
+            ack?.({ ok: false, error: "Not an active member of this room" });
+            return;
+        }
+        const disabled = await (0, db_1.isRoomDisabled)(roomId);
+        if (disabled) {
+            ack?.({ ok: false, error: "ROOM_DISABLED" });
+            return;
+        }
+        const { ciphertext, iv, authTag } = payload ?? {};
+        if (!isNonEmptyString(ciphertext) || !isNonEmptyString(iv) || !isNonEmptyString(authTag)) {
+            ack?.({ ok: false, error: "ciphertext, iv, and authTag are required" });
+            return;
+        }
+        if (ciphertext.length > MAX_ENVELOPE_FIELD_SIZE ||
+            iv.length > MAX_ENVELOPE_FIELD_SIZE ||
+            authTag.length > MAX_ENVELOPE_FIELD_SIZE) {
+            ack?.({ ok: false, error: "Encrypted payload is too large" });
+            return;
+        }
+        try {
+            const db = await (0, db_1.getDb)();
+            const message = await db.collection("room_messages").findOne({
+                _id: new mongodb_1.ObjectId(payload.messageId),
+                roomId: new mongodb_1.ObjectId(roomId),
+            });
+            if (!message) {
+                ack?.({ ok: false, error: "MESSAGE_NOT_FOUND" });
+                return;
+            }
+            if (message.senderId.toHexString() !== socket.data.userId) {
+                ack?.({ ok: false, error: "NOT_MESSAGE_OWNER" });
+                return;
+            }
+            // 15-minute edit window enforcement
+            const now = new Date();
+            const createdAt = message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt);
+            const diffMs = now.getTime() - createdAt.getTime();
+            if (diffMs > 15 * 60 * 1000) {
+                ack?.({ ok: false, error: "EDIT_WINDOW_EXPIRED" });
+                return;
+            }
+            const updated = await (0, db_1.updateMessageContent)(roomId, payload.messageId, socket.data.userId, ciphertext, iv, authTag);
+            if (!updated) {
+                ack?.({ ok: false, error: "MESSAGE_NOT_FOUND" });
+                return;
+            }
+            const senderInfo = await (0, db_1.getSenderInfo)(roomId, socket.data.userId);
+            const outbound = {
+                id: payload.messageId,
+                roomId,
+                messageId: payload.messageId,
+                senderId: socket.data.userId,
+                ciphertext,
+                iv,
+                authTag,
+                messageType: message.messageType,
+                roomKeyVersion: typeof message.roomKeyVersion === "number" ? message.roomKeyVersion : 0,
+                createdAt: (message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt)).toISOString(),
+                editedAt: now.toISOString(),
+                replyTo: message.replyTo
+                    ? {
+                        messageId: message.replyTo.messageId.toString(),
+                        senderId: message.replyTo.senderId.toString(),
+                        senderName: message.replyTo.senderName,
+                        senderUserIndex: message.replyTo.senderUserIndex ?? null,
+                        messageType: message.replyTo.messageType,
+                        previewIv: message.replyTo.previewIv ?? null,
+                        previewCiphertext: message.replyTo.previewCiphertext ?? null,
+                        previewAuthTag: message.replyTo.previewAuthTag ?? null,
+                    }
+                    : null,
+                senderName: senderInfo.name,
+                senderUserIndex: senderInfo.userIndex,
+            };
+            ack?.({ ok: true, message: outbound });
+            io.to(`room:${roomId}`).emit("message_edited", outbound);
+        }
+        catch (err) {
+            ack?.({
+                ok: false,
+                error: err instanceof Error ? err.message : "Failed to edit message",
+            });
+        }
+    });
+    socket.on("delete_message", async (payload, ack) => {
+        const roomId = payload?.roomId || socket.data.roomId;
+        if (!roomId) {
+            ack?.({ ok: false, error: "roomId required" });
+            return;
+        }
+        if (!payload?.messageId) {
+            ack?.({ ok: false, error: "messageId required" });
+            return;
+        }
+        const member = await (0, db_1.isActiveMember)(roomId, socket.data.userId);
+        if (!member) {
+            ack?.({ ok: false, error: "Not an active member of this room" });
+            return;
+        }
+        const disabled = await (0, db_1.isRoomDisabled)(roomId);
+        if (disabled) {
+            ack?.({ ok: false, error: "ROOM_DISABLED" });
+            return;
+        }
+        try {
+            const db = await (0, db_1.getDb)();
+            const message = await db.collection("room_messages").findOne({
+                _id: new mongodb_1.ObjectId(payload.messageId),
+                roomId: new mongodb_1.ObjectId(roomId),
+            });
+            if (!message) {
+                ack?.({ ok: false, error: "MESSAGE_NOT_FOUND" });
+                return;
+            }
+            if (message.senderId.toHexString() !== socket.data.userId) {
+                ack?.({ ok: false, error: "NOT_MESSAGE_OWNER" });
+                return;
+            }
+            const deleted = await (0, db_1.deleteMessage)(roomId, payload.messageId, socket.data.userId);
+            if (!deleted) {
+                ack?.({ ok: false, error: "MESSAGE_NOT_FOUND" });
+                return;
+            }
+            const outbound = {
+                roomId,
+                messageId: payload.messageId,
+                senderId: socket.data.userId,
+            };
+            ack?.({ ok: true });
+            io.to(`room:${roomId}`).emit("message_deleted", outbound);
+        }
+        catch (err) {
+            ack?.({
+                ok: false,
+                error: err instanceof Error ? err.message : "Failed to delete message",
             });
         }
     });
@@ -365,7 +565,7 @@ io.on("connection", (socket) => {
             const limit = typeof payload.limit === "number"
                 ? Math.min(Math.max(payload.limit, 1), 100)
                 : 100;
-            const messages = await (0, db_1.fetchMessagesSince)(roomId, payload.since, payload.sinceId, limit);
+            const messages = await (0, db_1.fetchMessagesSince)(roomId, socket.data.userId, payload.since, payload.sinceId, limit);
             ack?.({ ok: true, messages });
         }
         catch {

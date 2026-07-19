@@ -211,9 +211,21 @@ export async function persistEncryptedMessage(input: PersistEncryptedMessageInpu
   }
 
   const result = await db.collection("room_messages").insertOne(doc);
+  const insertedIdHex = result.insertedId.toHexString();
+
+  // Keep room's latest message metadata up-to-date
+  await db.collection("rooms").updateOne(
+    { _id: new ObjectId(input.roomId) },
+    {
+      $set: {
+        latestMessageId: insertedIdHex,
+        latestMessageCreatedAt: now,
+      },
+    }
+  );
 
   return {
-    _id: result.insertedId.toHexString(),
+    _id: insertedIdHex,
     createdAt: now.toISOString(),
   };
 }

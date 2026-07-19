@@ -6,6 +6,8 @@ exports.getSenderInfo = getSenderInfo;
 exports.isActiveMember = isActiveMember;
 exports.fetchMessagesSince = fetchMessagesSince;
 exports.persistEncryptedMessage = persistEncryptedMessage;
+exports.updateMessageContent = updateMessageContent;
+exports.deleteMessage = deleteMessage;
 require("./load-env");
 const mongodb_1 = require("mongodb");
 function getMongoUri() {
@@ -54,10 +56,13 @@ async function isActiveMember(roomId, userId) {
     });
     return Boolean(membership);
 }
-async function fetchMessagesSince(roomId, since, sinceId, limit = 100) {
+async function fetchMessagesSince(roomId, userId, since, sinceId, limit = 100) {
     const db = await getDb();
     const collection = db.collection("room_messages");
     const roomObjectId = new mongodb_1.ObjectId(roomId);
+    // Enforce the member's join boundary — no messages before they joined.
+    const membership = await db.collection("room_memberships").findOne({ roomId: roomObjectId, userId: new mongodb_1.ObjectId(userId) }, { projection: { joinedAt: 1 } });
+    const joinedAt = membership?.joinedAt instanceof Date ? membership.joinedAt : new Date(0);
     let query = { roomId: roomObjectId };
     if (sinceId && mongodb_1.ObjectId.isValid(sinceId)) {
         const anchorId = new mongodb_1.ObjectId(sinceId);
@@ -65,6 +70,7 @@ async function fetchMessagesSince(roomId, since, sinceId, limit = 100) {
         if (anchor) {
             query = {
                 roomId: roomObjectId,
+                createdAt: { $gt: joinedAt }, // never return pre-join messages
                 $or: [
                     { createdAt: { $gt: anchor.createdAt } },
                     { createdAt: anchor.createdAt, _id: { $gt: anchorId } },
@@ -77,7 +83,9 @@ async function fetchMessagesSince(roomId, since, sinceId, limit = 100) {
         if (Number.isNaN(sinceDate.getTime())) {
             throw new Error("Invalid since timestamp");
         }
-        query = { roomId: roomObjectId, createdAt: { $gt: sinceDate } };
+        // Use whichever lower-bound is later: the client's since timestamp or the member's joinedAt.
+        const effectiveSince = sinceDate > joinedAt ? sinceDate : joinedAt;
+        query = { roomId: roomObjectId, createdAt: { $gt: effectiveSince } };
     }
     const messages = await collection
         .find(query)
@@ -97,6 +105,18 @@ async function fetchMessagesSince(roomId, since, sinceId, limit = 100) {
         const senderId = doc.senderId.toHexString();
         const user = userMap.get(senderId);
         const membership = membershipMap.get(senderId);
+        const replyTo = doc.replyTo
+            ? {
+                messageId: doc.replyTo.messageId.toString(),
+                senderId: doc.replyTo.senderId.toString(),
+                senderName: doc.replyTo.senderName,
+                senderUserIndex: doc.replyTo.senderUserIndex ?? null,
+                messageType: doc.replyTo.messageType,
+                previewIv: doc.replyTo.previewIv ?? null,
+                previewCiphertext: doc.replyTo.previewCiphertext ?? null,
+                previewAuthTag: doc.replyTo.previewAuthTag ?? null,
+            }
+            : null;
         return {
             id: doc._id.toHexString(),
             roomId: doc.roomId.toHexString(),
@@ -106,6 +126,8 @@ async function fetchMessagesSince(roomId, since, sinceId, limit = 100) {
             authTag: doc.authTag,
             messageType: doc.messageType,
             roomKeyVersion: typeof doc.roomKeyVersion === "number" ? doc.roomKeyVersion : 0,
+            replyTo,
+            editedAt: doc.editedAt ? doc.editedAt.toISOString() : null,
             createdAt: doc.createdAt.toISOString(),
             senderName: user?.name || user?.email || null,
             senderUserIndex: membership?.userIndex ?? null,
@@ -127,9 +149,39 @@ async function persistEncryptedMessage(input) {
     if (typeof input.roomKeyVersion === "number") {
         doc.roomKeyVersion = input.roomKeyVersion;
     }
+    if (input.replyTo) {
+        doc.replyTo = {
+            messageId: new mongodb_1.ObjectId(input.replyTo.messageId),
+            senderId: new mongodb_1.ObjectId(input.replyTo.senderId),
+            senderName: input.replyTo.senderName,
+            senderUserIndex: input.replyTo.senderUserIndex ?? null,
+            messageType: input.replyTo.messageType,
+            previewIv: input.replyTo.previewIv ?? null,
+            previewCiphertext: input.replyTo.previewCiphertext ?? null,
+            previewAuthTag: input.replyTo.previewAuthTag ?? null,
+        };
+    }
     const result = await db.collection("room_messages").insertOne(doc);
+    const insertedIdHex = result.insertedId.toHexString();
+    // Keep room's latest message metadata up-to-date
+    await db.collection("rooms").updateOne({ _id: new mongodb_1.ObjectId(input.roomId) }, {
+        $set: {
+            latestMessageId: insertedIdHex,
+            latestMessageCreatedAt: now,
+        },
+    });
     return {
-        _id: result.insertedId.toHexString(),
+        _id: insertedIdHex,
         createdAt: now.toISOString(),
     };
+}
+async function updateMessageContent(roomId, messageId, senderId, ciphertext, iv, authTag) {
+    const db = await getDb();
+    const result = await db.collection("room_messages").updateOne({ _id: new mongodb_1.ObjectId(messageId), roomId: new mongodb_1.ObjectId(roomId), senderId: new mongodb_1.ObjectId(senderId) }, { $set: { ciphertext, iv, authTag, editedAt: new Date() } });
+    return result.matchedCount > 0;
+}
+async function deleteMessage(roomId, messageId, senderId) {
+    const db = await getDb();
+    const result = await db.collection("room_messages").deleteOne({ _id: new mongodb_1.ObjectId(messageId), roomId: new mongodb_1.ObjectId(roomId), senderId: new mongodb_1.ObjectId(senderId) });
+    return result.deletedCount > 0;
 }

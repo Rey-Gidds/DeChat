@@ -86,6 +86,8 @@ export interface Room {
   nextUserIndex?: number;
   pendingKeyRotation?: boolean;
   lastKeyVersion?: number;
+  latestMessageId?: string;
+  latestMessageCreatedAt?: Date;
 }
 
 export interface RoomMembership {
@@ -115,6 +117,8 @@ export interface ImageMetadata {
   height: number;
   size: number;
   iv: string;
+  caption?: string;
+  localUrl?: string;
 }
 
 export interface VideoMetadata {
@@ -128,6 +132,13 @@ export interface VideoMetadata {
   thumbnailIv: string;
   duration?: number;
   iv: string;
+  caption?: string;
+  // Per-chunk IV map for progressive streaming (Phase D+).
+  // Absent for old messages and single-chunk uploads.
+  ivBase?: string;
+  chunkSize?: number;
+  chunkIvMap?: string[];
+  localUrl?: string;
 }
 
 export type MediaMetadata = ImageMetadata | VideoMetadata;
@@ -153,6 +164,8 @@ export interface ReplyToInfo {
   previewIv: string | null;
   previewCiphertext: string | null;
   previewAuthTag: string | null;
+  /** Key version used to encrypt the preview. Missing for old messages — falls back to current key. */
+  previewKeyVersion?: number;
 }
 
 export interface RoomMessage {

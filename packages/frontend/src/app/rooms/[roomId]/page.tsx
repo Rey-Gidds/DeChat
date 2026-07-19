@@ -27,21 +27,30 @@ import {
   wrapRoomKeyForPublicKey,
   importPublicKey,
 } from "@/lib/crypto";
-import { encryptMedia } from "@/lib/media-crypto";
-import {
-  optimizeImage,
-  generateVideoThumbnail,
-  isSupportedImage,
-  isSupportedVideo,
-} from "@/lib/media-optimizer";
+import { encryptMedia, encryptMediaChunked } from "@/lib/media-crypto";
+import { isSupportedImage, isSupportedVideo } from "@/lib/media-optimizer";
 import { requestUploadUrl, uploadEncryptedBlob, clearMediaCache } from "@/lib/media-storage";
+import { compressMedia } from "@/lib/media";
+import type { CompressImageResult, CompressVideoResult } from "@/lib/media";
 import {
   fetchMessageHistory,
   syncMessagesSince,
   fetchMessagesAround,
+  resumeSync,
 } from "@/lib/messages-client";
+import {
+  getCachedMessages,
+  getRoomCacheMeta,
+  appendToCache,
+  replaceCache,
+  evictLRURooms,
+  removeFromCache,
+  CACHE_WINDOW_SIZE,
+  MAX_CACHED_ROOMS,
+} from "@/lib/message-cache";
 import { ChatInput } from "@/components/chat/chat-input";
 import { GifPicker, type GifSelection } from "@/components/chat/gif-picker";
+import { ImageViewer } from "@/components/chat/image-viewer";
 import { MessageList, type UiMessage } from "@/components/chat/message-list";
 import { MessageContextMenu } from "@/components/chat/message-context-menu";
 import { DeleteConfirmDialog } from "@/components/chat/delete-confirm-dialog";
@@ -56,6 +65,7 @@ import {
   type SuccessionMember,
 } from "@/components/chat/room-settings";
 import { useKeyHealth } from "@/components/key-recovery/provider";
+import { useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import type { GifMetadata, ImageMetadata, VideoMetadata, ReplyToInfo } from "@/lib/models";
 import { encryptMessagePreview } from "@/lib/quoted-message";
@@ -125,6 +135,36 @@ function mergeMessages(existing: UiMessage[], incoming: UiMessage[]): UiMessage[
   return Array.from(map.values()).sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
+}
+
+function probeLocalMediaDimensions(file: File, isImage: boolean): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    if (isImage) {
+      const img = new Image();
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => {
+        resolve({ width: 640, height: 480 });
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    } else {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => {
+        resolve({ width: video.videoWidth, height: video.videoHeight });
+        URL.revokeObjectURL(url);
+      };
+      video.onerror = () => {
+        resolve({ width: 640, height: 360 });
+        URL.revokeObjectURL(url);
+      };
+      video.src = url;
+    }
+  });
 }
 
 async function decryptBatch(
@@ -238,12 +278,17 @@ export default function RoomChatPage() {
   const router = useRouter();
   const roomId = params?.roomId;
   const { openRecovery, hasPrivateKey } = useKeyHealth();
+  const { data: session } = useSession();
+  // Cached userId from better-auth session — available instantly on SPA navigations.
+  const sessionUserId = session?.user?.id ?? null;
 
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [mediaSending, setMediaSending] = useState(false);
-  const [status, setStatus] = useState("Connecting...");
+  const [status, setStatus] = useState("");
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [cacheServed, setCacheServed] = useState(false);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
@@ -260,8 +305,12 @@ export default function RoomChatPage() {
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [showRecoveryPrompt, setShowRecoveryPrompt] = useState(false);
   const [gifPickerOpen, setGifPickerOpen] = useState(false);
+  const [pendingMediaFile, setPendingMediaFile] = useState<File | null>(null);
+  const [viewerMessageId, setViewerMessageId] = useState<string | null>(null);
   const [downArrowLoading, setDownArrowLoading] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
+  // Dismissable inline toast for non-blocking errors (quoted message deleted, etc.)
+  const [toast, setToast] = useState<string | null>(null);
 
   // ── Reply / Edit / Delete state ──
   const [replyContext, setReplyContext] = useState<{
@@ -296,16 +345,14 @@ export default function RoomChatPage() {
   const [isRotating, setIsRotating] = useState(false);
   const rotationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workerRef = useRef<OutboxRetryWorker | null>(null);
+  const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const setListRef = useCallback((el: HTMLDivElement | null) => {
     (listRef as any).current = el;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
+    // Don't scroll here — the container is empty at mount.
+    // Scroll is handled by the bootstrap timeout after messages render,
+    // and by appendDecrypted for incoming/sent messages.
   }, []);
   const shouldStickToBottomRef = useRef(true);
   const lastMessageRef = useRef<{ createdAt: string; id: string } | null>(null);
@@ -372,23 +419,33 @@ export default function RoomChatPage() {
   );
 
   const runSync = useCallback(async () => {
-    if (!roomId || !roomKeyRef.current) return;
-    const anchor = lastMessageRef.current;
-    if (!anchor) return;
+    if (!roomId) return;
 
     try {
-      const ws = await syncSince(roomId, anchor.createdAt, anchor.id).catch(() => null);
-      if (ws?.ok && ws.messages?.length) {
-        await appendDecrypted(ws.messages);
-        return;
-      }
+      const meta = await getRoomCacheMeta(roomId);
+      const resume = await resumeSync(
+        roomId,
+        meta?.newestCachedMessageId,
+        meta?.newestCachedCreatedAt
+      );
 
-      const rest = await syncMessagesSince(roomId, anchor.createdAt, anchor.id);
-      await appendDecrypted(rest.messages);
+      if (resume.strategy === "UP_TO_DATE" || resume.messages.length === 0) return;
+
+      const decrypted = await decryptBatch(resume.messages, currentUserId, roomId);
+
+      if (resume.strategy === "DELTA") {
+        setMessages((prev) => mergeMessages(prev, decrypted));
+        await appendToCache(roomId, resume.messages, CACHE_WINDOW_SIZE);
+      } else {
+        const optimistic = await loadOptimisticMessages(roomId, currentUserId);
+        setMessages(mergeMessages(decrypted, optimistic));
+        await replaceCache(roomId, resume.messages);
+      }
+      await evictLRURooms(MAX_CACHED_ROOMS);
     } catch {
       // Sync failures are non-fatal; live socket may still deliver messages.
     }
-  }, [roomId, appendDecrypted]);
+  }, [roomId, currentUserId]);
 
   const loadOlder = useCallback(async () => {
     if (!roomId || !historyCursor || loadingOlder) return;
@@ -452,10 +509,10 @@ export default function RoomChatPage() {
           return;
         }
 
-        // If the target message was deleted, show an alert
+        // If the target message was deleted, show a dismissable toast
         if (!response.messages.length) {
           setQuoteLoading(false);
-          alert("The quoted message does not exist");
+          setToast("The quoted message no longer exists.");
           return;
         }
 
@@ -488,7 +545,7 @@ export default function RoomChatPage() {
         });
       } catch {
         setQuoteLoading(false);
-        alert("The quoted message does not exist");
+        setToast("The quoted message could not be loaded.");
       }
     },
     [roomId, currentUserId, quoteLoading]
@@ -540,9 +597,67 @@ export default function RoomChatPage() {
 
     const bootstrap = async () => {
       try {
-        const [metaRes, membershipRes] = await Promise.all([
+        // Phase 0: Instant render from IndexedDB cache
+        const cached = await getCachedMessages(roomId);
+        const isColdStart = cached.length === 0;
+
+        // Pre-load room keys from IndexedDB so media and reply previews decrypt instantly.
+        // Scan cached messages for unique key versions and load the highest one available.
+        if (!isColdStart) {
+          const keyVersions = new Set<number>();
+          for (const msg of cached) {
+            if (msg.roomKeyVersion != null) keyVersions.add(msg.roomKeyVersion);
+          }
+          const sorted = [...keyVersions].sort((a, b) => b - a);
+          for (const version of sorted) {
+            const cachedKey = await getRoomKeyVersion(roomId, version);
+            if (cachedKey) {
+              roomKeyRef.current = cachedKey;
+              setRoomKeyRotation((prev) => ({
+                ...prev,
+                lastKeyVersion: version,
+                currentKeyVersion: version,
+              }));
+              break;
+            }
+          }
+        }
+
+        // Use cached userId from session if available so isOwn is correct from the start.
+        const phase0UserId = sessionUserId ?? "";
+        const decryptedCache = await decryptBatch(cached, phase0UserId, roomId);
+        const optimistic = await loadOptimisticMessages(roomId, phase0UserId);
+        const usedCorrectUserId = sessionUserId != null;
+
+        if (mounted) {
+          setMessages(mergeMessages(decryptedCache, optimistic));
+          // If we already know the userId (session cached), dismiss the overlay immediately
+          // so the user sees the working set without waiting for network calls.
+          if (usedCorrectUserId && !isColdStart) {
+            scrollToBottom("auto");
+            requestAnimationFrame(() => {
+              setCacheServed(true);
+              setIsBootstrapping(false);
+            });
+          }
+          if (isColdStart) {
+            setIsBootstrapping(true);
+          }
+        }
+
+        // Phase 1: Parallel async fetches (excluding socket connect to load cached data fast)
+        const cacheMeta = await getRoomCacheMeta(roomId);
+        const newestCachedMessageId = cacheMeta?.newestCachedMessageId || undefined;
+        const newestCachedCreatedAt = cacheMeta?.newestCachedCreatedAt || undefined;
+
+        let resumeFetchFailed = false;
+        const [metaRes, membershipRes, resumeRes] = await Promise.all([
           fetch(`/api/rooms/${roomId}`, { credentials: "include" }),
           fetch(`/api/rooms/${roomId}/membership`, { credentials: "include" }),
+          resumeSync(roomId, newestCachedMessageId, newestCachedCreatedAt).catch(() => {
+            resumeFetchFailed = true;
+            return { strategy: "REPLACE" as const, messages: [] };
+          }),
         ]);
 
         const metaData = (await metaRes.json()) as RoomMeta & { error?: string };
@@ -555,19 +670,19 @@ export default function RoomChatPage() {
         let membershipStatus = metaData.membership?.status;
         if (!membershipStatus) {
           setStatus("Not a member of this room");
+          setIsBootstrapping(false);
           return;
         }
 
         if (membershipStatus !== "APPROVED") {
           if (membershipStatus === "PENDING") {
             setStatus("Request pending");
-            return;
-          }
-          if (membershipStatus === "REJECTED") {
+          } else if (membershipStatus === "REJECTED") {
             setStatus("Your request was declined");
-            return;
+          } else {
+            setStatus("Not a member of this room");
           }
-          setStatus("Not a member of this room");
+          setIsBootstrapping(false);
           return;
         }
 
@@ -580,6 +695,7 @@ export default function RoomChatPage() {
 
         if (membership.status === "REJECTED") {
           setStatus("Admin rejected your request");
+          setIsBootstrapping(false);
           return;
         }
 
@@ -589,7 +705,7 @@ export default function RoomChatPage() {
 
         setCurrentUserId(membership.userId);
 
-        // Fetch all room key distributions
+        // Phase 2: Process Keys
         let latestKeyVersion = 0;
         try {
           const distributions = await fetchMyKeyDistributions(roomId);
@@ -614,9 +730,86 @@ export default function RoomChatPage() {
 
         roomKeyRef.current = await getRoomKeyVersion(roomId, latestKeyVersion);
 
-        const history = await fetchMessageHistory(roomId, { limit: 40 });
+        // Phase 3: Apply Resume Result
+        // If resumeFetchFailed (network error), skip all cache writes and fall back to
+        // the existing warm cache — we never wipe good cached data on a transient failure.
+        const resume = resumeRes;
+        const decrypted = resumeFetchFailed
+          ? []
+          : await decryptBatch(resume.messages, membership.userId, roomId);
 
-        const decrypted = await decryptBatch(history.messages, membership.userId, roomId);
+        if (resumeFetchFailed) {
+          // Network failure — re-decrypt only if Phase 0 didn't have the correct userId.
+          // Otherwise Phase 0 already rendered the correct messages.
+          if (!usedCorrectUserId) {
+            const updatedCache = await decryptBatch(cached, membership.userId, roomId);
+            const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
+            setMessages(mergeMessages(updatedCache, currentOptimistic));
+          }
+          // Do NOT touch IndexedDB cache — preserve whatever was there.
+        } else if (resume.strategy === "UP_TO_DATE") {
+          // No new messages — re-decrypt only if Phase 0 didn't have the correct userId.
+          if (!usedCorrectUserId) {
+            const updatedCache = await decryptBatch(cached, membership.userId, roomId);
+            const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
+            setMessages(mergeMessages(updatedCache, currentOptimistic));
+          }
+        } else if (resume.strategy === "DELTA") {
+          // Has new messages — always merge deltas even if Phase 0 was correct.
+          const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
+          if (!usedCorrectUserId) {
+            const updatedCache = await decryptBatch(cached, membership.userId, roomId);
+            setMessages(mergeMessages(mergeMessages(updatedCache, decrypted), currentOptimistic));
+          } else {
+            setMessages(mergeMessages(mergeMessages(decryptedCache, decrypted), currentOptimistic));
+          }
+          await appendToCache(roomId, resume.messages, CACHE_WINDOW_SIZE);
+          await evictLRURooms(MAX_CACHED_ROOMS);
+        } else {
+          // REPLACE — genuine server-driven replacement (cold start or large gap).
+          const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
+          setMessages(mergeMessages(decrypted, currentOptimistic));
+          await replaceCache(roomId, resume.messages);
+          await evictLRURooms(MAX_CACHED_ROOMS);
+        }
+
+        if (decrypted.length > 0) {
+          const last = decrypted[decrypted.length - 1];
+          lastMessageRef.current = { createdAt: last.createdAt, id: last.id };
+        } else if (cached.length > 0) {
+          const last = cached[cached.length - 1];
+          lastMessageRef.current = { createdAt: last.createdAt, id: last.id };
+        }
+
+        if (resume.messages.length > 0) {
+          setHistoryCursor(resume.messages[0].id);
+        } else if (cached.length > 0) {
+          setHistoryCursor(cached[0].id);
+        }
+
+        // If Phase 0 already dismissed the overlay (correct userId + warm cache),
+        // skip the scroll-and-dismiss timeout to avoid scroll jump.
+        if (!isColdStart && !usedCorrectUserId && mounted) {
+          setTimeout(() => {
+            if (mounted) {
+              scrollToBottom("auto");
+              requestAnimationFrame(() => {
+                setCacheServed(true);
+                setIsBootstrapping(false);
+              });
+            }
+          }, 50);
+        } else if (isColdStart && mounted) {
+          setTimeout(() => {
+            if (mounted && shouldStickToBottomRef.current) {
+              scrollToBottom("auto");
+            }
+            requestAnimationFrame(() => {
+              setCacheServed(true);
+              setIsBootstrapping(false);
+            });
+          }, 100);
+        }
 
         // Check for pending key rotation
         if (roomKeyRotation.pendingKeyRotation) {
@@ -731,65 +924,206 @@ export default function RoomChatPage() {
         } else {
           setStatus("Connected");
         }
+
         if (!mounted) return;
 
         // Set isAtBottom initially
         setIsAtBottom(true);
 
-        // Load outbox entries
-        const optimistic = await loadOptimisticMessages(roomId, membership.userId);
-        setMessages(mergeMessages(decrypted, optimistic));
-        setHistoryCursor(history.nextCursor);
+        // Phase 4: Live WebSocket connection & retry worker
+        // Perform connection asynchronously in the background so it never blocks the UI or input activation.
+        connectToRoom(roomId).then(async (socket) => {
+          if (!mounted) return;
 
-        if (decrypted.length > 0) {
-          lastMessageRef.current = {
-            createdAt: decrypted[decrypted.length - 1].createdAt,
-            id: decrypted[decrypted.length - 1].id,
+          // Start outbox retry worker
+          const transmit = async (entry: OutboxEntry): Promise<"sent" | "failed" | "retry"> => {
+            try {
+              const roomKey = await getRoomKeyVersion(roomId, entry.roomKeyVersion);
+              if (!roomKey) return "retry";
+              const res = await sendEncryptedMessage({
+                roomId,
+                clientMessageId: entry.clientMessageId,
+                ciphertext: entry.ciphertext,
+                iv: entry.iv,
+                authTag: entry.authTag,
+                roomKeyVersion: entry.roomKeyVersion,
+                messageType: entry.messageType,
+                replyTo: entry.replyTo ?? undefined,
+              });
+              if (res.ok) {
+                if (res.message) {
+                  const decryptedBody = await decryptMessage(res.message, roomKey);
+                  reconcileOptimisticMessage(
+                    entry.clientMessageId,
+                    res.message,
+                    decryptedBody,
+                    membership.userId!,
+                    setMessages
+                  );
+                }
+                return "sent";
+              }
+              if (entry.retryCount < entry.maxRetries) return "retry";
+              return "failed";
+            } catch {
+              return "retry";
+            }
           };
-        }
+          const worker = new OutboxRetryWorker(roomId, transmit);
+          worker.start();
+          workerRef.current = worker;
 
-        // Connect to room
-        await connectToRoom(roomId);
-        if (!mounted) return;
-        setStatus("Connected");
+          socket.on("room_message", async (incoming: RealtimeRoomMessage) => {
+            if (incoming.roomId !== roomId) return;
 
-        // Start outbox retry worker
-        const transmit = async (entry: OutboxEntry): Promise<"sent" | "failed" | "retry"> => {
-          try {
-            const roomKey = await getRoomKeyVersion(roomId, entry.roomKeyVersion);
-            if (!roomKey) return "retry";
-            const res = await sendEncryptedMessage({
-              roomId,
-              clientMessageId: entry.clientMessageId,
-              ciphertext: entry.ciphertext,
-              iv: entry.iv,
-              authTag: entry.authTag,
-              roomKeyVersion: entry.roomKeyVersion,
-              messageType: entry.messageType,
-              replyTo: entry.replyTo ?? undefined,
-            });
-            if (res.ok) {
-              if (res.message) {
-                const decryptedBody = await decryptMessage(res.message, roomKey);
+            // Reconcile optimistic
+            if (incoming.senderId === membership.userId) {
+              const clientMsgId = incoming.clientMessageId;
+              if (clientMsgId) {
+                await deleteOutboxEntry(clientMsgId);
+                const roomKey = roomKeyRef.current;
+                let decryptedBody = "";
+                if (roomKey) {
+                  try {
+                    decryptedBody = await decryptMessage(incoming, roomKey);
+                  } catch {
+                    // fallback
+                  }
+                }
                 reconcileOptimisticMessage(
-                  entry.clientMessageId,
-                  res.message,
+                  clientMsgId,
+                  incoming,
                   decryptedBody,
-                  membership.userId!,
+                  membership.userId,
                   setMessages
                 );
+              } else {
+                const matched = await findOutboxEntryByCipherprint(roomId, incoming.ciphertext, incoming.iv);
+                if (matched) {
+                  const roomKey = roomKeyRef.current;
+                  let decryptedBody = matched.displayBody;
+                  if (roomKey) {
+                    try {
+                      decryptedBody = await decryptMessage(incoming, roomKey);
+                    } catch {
+                      // fallback
+                    }
+                  }
+                  await deleteOutboxEntry(matched.clientMessageId);
+                  reconcileOptimisticMessage(
+                    matched.clientMessageId,
+                    incoming,
+                    decryptedBody,
+                    membership.userId,
+                    setMessages
+                  );
+                }
               }
-              return "sent";
             }
-            if (entry.retryCount < entry.maxRetries) return "retry";
-            return "failed";
-          } catch {
-            return "retry";
-          }
-        };
-        const worker = new OutboxRetryWorker(roomId, transmit);
-        worker.start();
-        workerRef.current = worker;
+
+            // Never auto-scroll on received messages; always use the down-arrow count.
+            setNewMessagesCount((prev) => prev + 1);
+
+            await appendDecrypted([incoming], false);
+
+            // Update IndexedDB sliding cache
+            await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
+          });
+
+          socket.on("message_edited", async (incoming: RealtimeRoomMessage) => {
+            if (incoming.roomId !== roomId) return;
+            try {
+              const keyVersion = incoming.roomKeyVersion ?? 0;
+              const roomKey = await getRoomKeyVersion(roomId, keyVersion);
+              let body = "";
+              if (roomKey) {
+                try {
+                  body = await decryptMessage(incoming, roomKey);
+                } catch {
+                  // fallback
+                }
+              }
+
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === incoming.id
+                    ? {
+                        ...m,
+                        body: body || m.body,
+                        editedAt: incoming.editedAt ?? null,
+                        ciphertext: incoming.ciphertext,
+                      }
+                    : m
+                )
+              );
+            } catch {
+              // silently ignore
+            }
+          });
+
+          socket.on("message_deleted", (payload: { roomId: string; messageId: string }) => {
+            if (payload.roomId !== roomId) return;
+            setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
+            // Also purge from persisted cache so the deleted message never
+            // reappears when the user rejoins the room.
+            void removeFromCache(roomId, payload.messageId);
+          });
+
+          socket.on("typing_started", (payload: TypingEventPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers((prev) =>
+              prev.includes(payload.userId) ? prev : [...prev, payload.userId]
+            );
+          });
+
+          socket.on("typing_stopped", (payload: TypingEventPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
+          });
+
+          socket.on("PRESENCE_UPDATED", (payload: { roomId: string; userId: string; isOnline: boolean }) => {
+            if (payload.roomId !== roomId) return;
+            setOnlineUserIds((prev) => {
+              const next = new Set(prev);
+              if (payload.isOnline) next.add(payload.userId);
+              else next.delete(payload.userId);
+              return next;
+            });
+          });
+
+          socket.on("PENDING_KEY_ROTATION", (payload: { roomId: string; version: number }) => {
+            if (payload.roomId !== roomId) return;
+            setRoomKeyRotation((prev) => ({
+              ...prev,
+              pendingKeyRotation: true,
+              lastKeyVersion: payload.version - 1,
+            }));
+            setStatus("Updating security...");
+            setIsRotating(true);
+          });
+
+          socket.on("KEY_ROTATION_COMPLETE", async (payload: { roomId: string; version: number }) => {
+            if (payload.roomId !== roomId) return;
+            setRoomKeyRotation((prev) => ({
+              ...prev,
+              pendingKeyRotation: false,
+              lastKeyVersion: payload.version,
+              currentKeyVersion: payload.version,
+            }));
+            setStatus("Connected");
+            setIsRotating(false);
+
+            await flushRotationQueue(roomId, payload.version, encryptMessage, getRoomKeyVersion);
+          });
+
+          socket.on("KEY_ROTATION_FAILED", (payload: { roomId: string; version: number; error: string }) => {
+            if (payload.roomId !== roomId) return;
+            setStatus("Key rotation failed: " + payload.error);
+            setIsRotating(false);
+          });
+        }).catch((err) => {
+          console.warn("Failed to connect socket in background:", err);
+        });
 
         // Fetch members
         void fetch(`/api/rooms/${roomId}/members`, { credentials: "include" })
@@ -802,157 +1136,20 @@ export default function RoomChatPage() {
           })
           .catch(() => undefined);
 
-        setTimeout(() => {
-          if (mounted && shouldStickToBottomRef.current) {
-            scrollToBottom("auto");
-          }
-        }, 100);
-
-        const socket = getSocket();
-        if (!socket) return;
-
-        socket.on("room_message", async (incoming: RealtimeRoomMessage) => {
-          if (incoming.roomId !== roomId) return;
-
-          // Reconcile optimistic
-          if (incoming.senderId === membership.userId) {
-            const clientMsgId = incoming.clientMessageId;
-            if (clientMsgId) {
-              await deleteOutboxEntry(clientMsgId);
-              const roomKey = roomKeyRef.current;
-              let decryptedBody = "";
-              if (roomKey) {
-                try {
-                  decryptedBody = await decryptMessage(incoming, roomKey);
-                } catch {
-                  // fallback
-                }
-              }
-              reconcileOptimisticMessage(
-                clientMsgId,
-                incoming,
-                decryptedBody,
-                membership.userId,
-                setMessages
-              );
-            } else {
-              const matched = await findOutboxEntryByCipherprint(roomId, incoming.ciphertext, incoming.iv);
-              if (matched) {
-                const roomKey = roomKeyRef.current;
-                let decryptedBody = matched.displayBody;
-                if (roomKey) {
-                  try {
-                    decryptedBody = await decryptMessage(incoming, roomKey);
-                  } catch {
-                    // fallback
-                  }
-                }
-                await deleteOutboxEntry(matched.clientMessageId);
-                reconcileOptimisticMessage(
-                  matched.clientMessageId,
-                  incoming,
-                  decryptedBody,
-                  membership.userId,
-                  setMessages
-                );
-              }
+        // Skip if Phase 0 already dismissed the overlay (warm cache + correct userId).
+        if (!usedCorrectUserId || isColdStart) {
+          setTimeout(() => {
+            if (mounted && shouldStickToBottomRef.current) {
+              scrollToBottom("auto");
             }
-          }
-
-          // Never auto-scroll on received messages; always use the down-arrow count.
-          setNewMessagesCount((prev) => prev + 1);
-
-          await appendDecrypted([incoming], false);
-        });
-
-        socket.on("message_edited", async (incoming: RealtimeRoomMessage) => {
-          if (incoming.roomId !== roomId) return;
-          try {
-            const keyVersion = incoming.roomKeyVersion ?? 0;
-            const roomKey = await getRoomKeyVersion(roomId, keyVersion);
-            let body = "";
-            if (roomKey) {
-              try {
-                body = await decryptMessage(incoming, roomKey);
-              } catch {
-                // fallback
+            requestAnimationFrame(() => {
+              if (mounted) {
+                setCacheServed(true);
+                setIsBootstrapping(false);
               }
-            }
-
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === incoming.id
-                  ? {
-                      ...m,
-                      body: body || m.body,
-                      editedAt: incoming.editedAt ?? null,
-                      ciphertext: incoming.ciphertext,
-                    }
-                  : m
-              )
-            );
-          } catch {
-            // silently ignore
-          }
-        });
-
-        socket.on("message_deleted", (payload: { roomId: string; messageId: string }) => {
-          if (payload.roomId !== roomId) return;
-          setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
-        });
-
-        socket.on("typing_started", (payload: TypingEventPayload) => {
-          if (payload.roomId !== roomId) return;
-          setTypingUsers((prev) =>
-            prev.includes(payload.userId) ? prev : [...prev, payload.userId]
-          );
-        });
-
-        socket.on("typing_stopped", (payload: TypingEventPayload) => {
-          if (payload.roomId !== roomId) return;
-          setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
-        });
-
-        socket.on("PRESENCE_UPDATED", (payload: { roomId: string; userId: string; isOnline: boolean }) => {
-          if (payload.roomId !== roomId) return;
-          setOnlineUserIds((prev) => {
-            const next = new Set(prev);
-            if (payload.isOnline) next.add(payload.userId);
-            else next.delete(payload.userId);
-            return next;
-          });
-        });
-
-        socket.on("PENDING_KEY_ROTATION", (payload: { roomId: string; version: number }) => {
-          if (payload.roomId !== roomId) return;
-          setRoomKeyRotation((prev) => ({
-            ...prev,
-            pendingKeyRotation: true,
-            lastKeyVersion: payload.version - 1,
-          }));
-          setStatus("Updating security...");
-          setIsRotating(true);
-        });
-
-        socket.on("KEY_ROTATION_COMPLETE", async (payload: { roomId: string; version: number }) => {
-          if (payload.roomId !== roomId) return;
-          setRoomKeyRotation((prev) => ({
-            ...prev,
-            pendingKeyRotation: false,
-            lastKeyVersion: payload.version,
-            currentKeyVersion: payload.version,
-          }));
-          setStatus("Connected");
-          setIsRotating(false);
-
-          await flushRotationQueue(roomId, payload.version, encryptMessage, getRoomKeyVersion);
-        });
-
-        socket.on("KEY_ROTATION_FAILED", (payload: { roomId: string; version: number; error: string }) => {
-          if (payload.roomId !== roomId) return;
-          setStatus("Key rotation failed: " + payload.error);
-          setIsRotating(false);
-        });
+            });
+          }, 100);
+        }
       } catch (err) {
         if (!mounted) return;
         const msg = err instanceof Error ? err.message : "Unable to join room";
@@ -962,6 +1159,7 @@ export default function RoomChatPage() {
         } else {
           setStatus(msg);
         }
+        setIsBootstrapping(false);
       }
     };
 
@@ -981,6 +1179,8 @@ export default function RoomChatPage() {
       if (rotationTimeoutRef.current) clearTimeout(rotationTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
       disconnectSocket();
+      setCacheServed(false);
+      setIsBootstrapping(true);
     };
   }, [roomId, appendDecrypted, runSync, scrollToBottom, roomKeyRotation.pendingKeyRotation]);
 
@@ -1072,6 +1272,7 @@ export default function RoomChatPage() {
           previewIv: previewEncrypted.previewIv,
           previewCiphertext: previewEncrypted.previewCiphertext,
           previewAuthTag: previewEncrypted.previewAuthTag,
+          previewKeyVersion: roomKeyRotation.currentKeyVersion,
         };
       }
 
@@ -1180,7 +1381,7 @@ export default function RoomChatPage() {
 
       // The message_edited socket event will update the local state
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Failed to edit message");
+      setToast(err instanceof Error ? err.message : "Failed to edit message");
     }
   }
 
@@ -1198,7 +1399,7 @@ export default function RoomChatPage() {
       if (!response.ok) throw new Error(response.error || "Delete failed");
     } catch (err) {
       // Re-add message on failure — the socket event would handle it anyway
-      setStatus(err instanceof Error ? err.message : "Failed to delete message");
+      setToast(err instanceof Error ? err.message : "Failed to delete message");
     }
   }
 
@@ -1221,9 +1422,14 @@ export default function RoomChatPage() {
 
   const isOwner = roomMeta?.membership?.role === "OWNER";
   const isPending = roomMeta?.membership?.status === "PENDING" || status === "Request pending";
-  const canChat = (status === "Connected" || status === "Updating security..." || isRotating)
+  // Enable chat as soon as the room key is available (Phase 2 end), not when isBootstrapping flips.
+  const canChat = (roomKeyRef.current != null) && !roomDisabled;
+  // showChatShell determines whether the full chat UI is visible for APPROVED members.
+  const isErrorStatus = status !== "" && status !== "Connected" && status !== "Updating security..." && status !== "Waiting for key rotation..." && !isBootstrapping && !isRotating;
+  const showChatShell = isBootstrapping || canChat || (!isErrorStatus && !isPending);
 
-  async function onSendMedia(file: File) {
+  /** Validate file and open the preview dialog instead of uploading directly. */
+  function handleFileSelected(file: File) {
     if (!roomId || mediaSending) return;
     if (roomDisabled) return;
 
@@ -1235,13 +1441,47 @@ export default function RoomChatPage() {
       return;
     }
 
-    setMediaSending(true);
+    setPendingMediaFile(file);
+  }
+
+  /**
+   * Send a single file through the full pipeline: compress → encrypt → upload → send message.
+   * Called by the ImageViewer (send mode) after user adds a caption.
+   */
+  async function pipelineOne(file: File, caption?: string, existingClientMessageId?: string) {
+    const clientMessageId = existingClientMessageId || crypto.randomUUID();
+
+    // Ensure we track in-flight file references for retries
+    backgroundFilesRef.current.set(clientMessageId, { file, caption });
+
+    const updateProgress = (
+      progress: number,
+      stage: "compressing" | "uploading" | "failed",
+      error?: string
+    ) => {
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.clientMessageId === clientMessageId) {
+            return {
+              ...m,
+              progress,
+              progressStage: stage,
+              status: stage === "failed" ? "failed" : "pending",
+              ...(error ? { error } : {}),
+            };
+          }
+          return m;
+        })
+      );
+    };
 
     try {
-      const roomKey = await getRoomKeyVersion(roomId, roomKeyRotation.currentKeyVersion);
+      const roomKey = await getRoomKeyVersion(roomId!, roomKeyRotation.currentKeyVersion);
       if (!roomKey) throw new Error("Room key not available");
 
-      let optimizedBlob: Blob;
+      const isImage = isSupportedImage(file);
+
+      let compressedBlob: Blob;
       let mimeType: string;
       let width: number;
       let height: number;
@@ -1249,75 +1489,225 @@ export default function RoomChatPage() {
       let thumbnailKey: string | undefined;
       let thumbnailIv: string | undefined;
       let videoDuration: number | undefined;
+      let ivBase: string | undefined;
+      let chunkSize: number | undefined;
 
       if (isImage) {
-        const optimized = await optimizeImage(file);
-        optimizedBlob = optimized.blob;
+        // ── Image path: compress to WebP, single-chunk encrypt ──
+        updateProgress(5, "compressing");
+        const optimized = await compressMedia(file, "image", {
+          onProgress: (p) => {
+            updateProgress(Math.round(p * 90) + 5, "compressing");
+          },
+        }) as CompressImageResult;
+
+        compressedBlob = optimized.blob;
         mimeType = optimized.mimeType;
         width = optimized.width;
         height = optimized.height;
-      } else {
-        const { thumbnail: thumbResult, metadata: videoInfo } = await generateVideoThumbnail(file);
-        optimizedBlob = file;
-        mimeType = file.type;
-        width = videoInfo.width;
-        height = videoInfo.height;
-        videoDuration = videoInfo.duration;
 
-        const thumbEncrypted = await encryptMedia(await thumbResult.blob.arrayBuffer(), roomKey);
-        const thumbUpload = await requestUploadUrl(roomId, "image/webp", thumbEncrypted.encrypted.byteLength);
-        await uploadEncryptedBlob(thumbUpload.uploadUrl, new Blob([thumbEncrypted.encrypted]));
-        thumbnailKey = thumbUpload.objectKey;
-        thumbnailIv = thumbEncrypted.iv;
-      }
+        updateProgress(100, "uploading");
 
-      const plaintext = await (isImage ? optimizedBlob : file).arrayBuffer();
-      const encrypted = await encryptMedia(plaintext, roomKey);
+        const plaintext = await compressedBlob.arrayBuffer();
+        const encrypted = await encryptMedia(plaintext, roomKey);
+        const upload = await requestUploadUrl(roomId!, mimeType, encrypted.encrypted.byteLength);
+        await uploadEncryptedBlob(upload.uploadUrl, new Blob([encrypted.encrypted]));
 
-      const upload = await requestUploadUrl(roomId, isImage ? mimeType : file.type, encrypted.encrypted.byteLength);
-      await uploadEncryptedBlob(upload.uploadUrl, new Blob([encrypted.encrypted]));
-
-      if (isImage) {
         mediaMetadata = {
           type: "image",
           objectKey: upload.objectKey,
           mimeType,
           width,
           height,
-          size: file.size,
+          size: plaintext.byteLength,
           iv: encrypted.iv,
+          ...(caption ? { caption } : {}),
         } satisfies ImageMetadata;
       } else {
+        // ── Video path: transcode to H.264, per-chunk IV encrypt, thumbnail ──
+        updateProgress(5, "compressing");
+        const compressed = await compressMedia(file, "video", {
+          targetHeight: 720,
+          quality: 28,
+          onProgress: (p) => {
+            updateProgress(Math.round(p * 80) + 5, "compressing");
+          },
+        }) as CompressVideoResult;
+
+        compressedBlob = compressed.compressedBlob;
+        width = compressed.width;
+        height = compressed.height;
+        videoDuration = compressed.duration;
+        mimeType = "video/mp4";
+
+        updateProgress(90, "compressing");
+        // Generate thumbnail from the compressed video using canvas
+        const thumbResult = await generateCanvasThumbnail(compressedBlob);
+        const thumbEncrypted = await encryptMedia(await thumbResult.blob.arrayBuffer(), roomKey);
+        const thumbUpload = await requestUploadUrl(roomId!, "image/webp", thumbEncrypted.encrypted.byteLength);
+        await uploadEncryptedBlob(thumbUpload.uploadUrl, new Blob([thumbEncrypted.encrypted]));
+        thumbnailKey = thumbUpload.objectKey;
+        thumbnailIv = thumbEncrypted.iv;
+
+        updateProgress(100, "uploading");
+
+        // Per-chunk IV encrypt for progressive streaming (1 MiB chunks)
+        const plaintext = await compressedBlob.arrayBuffer();
+        const chunked = await encryptMediaChunked(plaintext, roomKey, 1024 * 1024);
+        ivBase = chunked.ivBase;
+        chunkSize = chunked.chunkSize;
+
+        const upload = await requestUploadUrl(roomId!, mimeType, chunked.encrypted.byteLength);
+        await uploadEncryptedBlob(upload.uploadUrl, new Blob([chunked.encrypted]));
+
         mediaMetadata = {
           type: "video",
           objectKey: upload.objectKey,
-          mimeType: file.type,
+          mimeType,
           width,
           height,
-          size: file.size,
+          size: plaintext.byteLength,
           thumbnailKey: thumbnailKey!,
           thumbnailIv: thumbnailIv!,
-          duration: videoDuration!,
-          iv: encrypted.iv,
+          duration: videoDuration,
+          iv: chunked.chunkIvMap[0],
+          ivBase,
+          chunkSize,
+          ...(caption ? { caption } : {}),
         } satisfies VideoMetadata;
       }
 
       const encryptedMessage = await encryptMessage(JSON.stringify(mediaMetadata), roomKey);
       const response = await sendEncryptedMessage({
-        roomId,
-        clientMessageId: crypto.randomUUID(),
+        roomId: roomId!,
+        clientMessageId,
         ...encryptedMessage,
         roomKeyVersion: roomKeyRotation.currentKeyVersion,
         messageType: isImage ? "image" : "video",
       });
 
-      if (response.message) await appendDecrypted([response.message]);
+      if (response.message) {
+        backgroundFilesRef.current.delete(clientMessageId);
+        const decryptedBody = isImage ? "📷 Image" : "🎬 Video";
+        reconcileOptimisticMessage(
+          clientMessageId,
+          response.message,
+          decryptedBody,
+          currentUserId,
+          setMessages
+        );
+      } else {
+        throw new Error(response.error || "Failed to send message over socket");
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to send media";
-      setStatus(msg);
-    } finally {
-      setMediaSending(false);
+      console.error("Media background pipeline failed:", err);
+      const errMsg = err instanceof Error ? err.message : "Media processing failed";
+      updateProgress(0, "failed", errMsg);
     }
+  }
+
+  /** Canvas-based video thumbnail from a compressed blob (lighter than ffmpeg re-run). */
+  async function generateCanvasThumbnail(videoBlob: Blob): Promise<{ blob: Blob; width: number; height: number }> {
+    const url = URL.createObjectURL(videoBlob);
+    try {
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = "metadata";
+      video.src = url;
+
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Failed to load video for thumbnail"));
+      });
+
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      video.currentTime = duration > 1 ? duration * 0.1 : 0;
+
+      await new Promise<void>((resolve, reject) => {
+        video.onseeked = () => resolve();
+        video.onerror = () => reject(new Error("Failed to seek video for thumbnail"));
+      });
+
+      // Scale to max 640px
+      const maxEdge = 640;
+      let tw = video.videoWidth;
+      let th = video.videoHeight;
+      if (tw > maxEdge || th > maxEdge) {
+        const ratio = tw / th;
+        if (tw > th) { tw = maxEdge; th = Math.round(maxEdge / ratio); }
+        else { th = maxEdge; tw = Math.round(maxEdge * ratio); }
+      }
+
+      const canvas = new OffscreenCanvas(tw, th);
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(video, 0, 0, tw, th);
+
+      const blob = await canvas.convertToBlob({ type: "image/webp", quality: 0.7 });
+      return { blob, width: tw, height: th };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  /** Called when user confirms send in the preview dialog. */
+  async function handleSendMedia(file: File, caption?: string) {
+    if (!roomId) return;
+    const clientMessageId = crypto.randomUUID();
+    const isImage = isSupportedImage(file);
+    const localUrl = URL.createObjectURL(file);
+
+    // Save mapping in-memory for retries
+    backgroundFilesRef.current.set(clientMessageId, { file, caption });
+
+    // Close preview modal immediately so UI is not blocked
+    setPendingMediaFile(null);
+
+    // Probe dimensions locally & instantly
+    const { width, height } = await probeLocalMediaDimensions(file, isImage);
+
+    // Optimistic UI message
+    const optimisticMsg: UiMessage = {
+      id: `optimistic:${clientMessageId}`,
+      clientMessageId,
+      senderId: currentUserId,
+      body: isImage ? "📷 Image" : "🎬 Video",
+      createdAt: new Date().toISOString(),
+      isOwn: true,
+      messageType: isImage ? "image" : "video",
+      status: "pending",
+      progress: 0,
+      progressStage: "compressing",
+      onRetry: () => {
+        const saved = backgroundFilesRef.current.get(clientMessageId);
+        if (saved) {
+          pipelineOne(saved.file, saved.caption, clientMessageId);
+        }
+      },
+      mediaMetadata: {
+        type: isImage ? "image" : "video",
+        objectKey: `local:${clientMessageId}`,
+        mimeType: file.type,
+        width,
+        height,
+        size: file.size,
+        iv: "",
+        localUrl,
+        caption,
+      } as any,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    // Keep feed scrolled to bottom
+    setIsAtBottom(true);
+    setNewMessagesCount(0);
+    setNewerCursor(null);
+    setHasNewer(false);
+    requestAnimationFrame(() => scrollToBottom("smooth"));
+
+    // Trigger pipeline in background (non-blocking)
+    pipelineOne(file, caption, clientMessageId);
   }
 
   async function handleToggleDisable() {
@@ -1373,7 +1763,7 @@ export default function RoomChatPage() {
 
       if (response.message) await appendDecrypted([response.message]);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Failed to send GIF");
+      setToast(err instanceof Error ? err.message : "Failed to send GIF");
     }
   }
 
@@ -1501,7 +1891,7 @@ export default function RoomChatPage() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-black overflow-hidden">
-      <div className="flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
+      <div className="relative flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
         <RoomHeader
           roomName={roomMeta?.room.name ?? "Room"}
           memberCount={roomMeta?.memberCount ?? 0}
@@ -1544,7 +1934,8 @@ export default function RoomChatPage() {
           />
         ) : (
           <>
-            {!canChat && !isPending && status !== "Connecting..." && (
+            {/* Error / non-member states */}
+            {isErrorStatus && !isPending && (
               <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
                 <p className="text-sm text-neutral-400">{status}</p>
                 {showRecoveryPrompt ? (
@@ -1568,11 +1959,29 @@ export default function RoomChatPage() {
               </div>
             )}
 
-            {canChat && (
+            {/* ── Dismissable inline toast for non-blocking errors ── */}
+            {toast && (
+              <div className="pointer-events-none absolute bottom-24 left-0 right-0 z-50 flex justify-center px-4">
+                <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
+                  <span className="text-[12px] text-neutral-300">{toast}</span>
+                  <button
+                    onClick={() => setToast(null)}
+                    className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-700 hover:text-neutral-200"
+                    aria-label="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Chat shell — shown immediately for approved members (bootstrapping or live) */}
+            {showChatShell && (
               <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden">
                 <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-                  {quoteLoading && (
-                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40">
+                  {/* Loading overlay — reused for both bootstrap phase and quote-click loading */}
+                  {(quoteLoading || !cacheServed) && (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-black">
                       <div className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-5 py-3">
                         <div className="h-4 w-4 animate-spin rounded-full border border-neutral-400 border-t-transparent" />
                         <span className="text-[11px] uppercase tracking-wider text-neutral-400">
@@ -1592,12 +2001,15 @@ export default function RoomChatPage() {
                     listRef={setListRef}
                     onScroll={handleScroll}
                     roomKey={roomKeyRef.current ?? undefined}
+                    roomId={roomId}
                     onReply={handleReply}
                     onEdit={handleEditMessage}
                     onDelete={handleDeleteMessage}
                     onQuoteClick={handleQuoteClick}
                     onShowMenu={handleContextMenu}
+                    onImageClick={(message) => setViewerMessageId(message.id)}
                     jumpTargetId={jumpTargetId}
+                    hideEmpty={isBootstrapping}
                   />
 
                   {/* Down-arrow button when not at bottom */}
@@ -1632,9 +2044,10 @@ export default function RoomChatPage() {
                       void onSend();
                     }
                   }}
-                  onSendMedia={(file) => void onSendMedia(file)}
+                  onSendMedia={(file) => handleFileSelected(file)}
                   onGifClick={() => setGifPickerOpen(true)}
-                  disabled={!canChat || roomDisabled}
+                  disabled={roomDisabled}
+                  sendDisabled={isBootstrapping || !canChat}
                   mediaSending={mediaSending}
                   replyContext={replyContext}
                   onClearReply={() => setReplyContext(null)}
@@ -1648,12 +2061,6 @@ export default function RoomChatPage() {
                 />
               </div>
             )}
-
-            {status === "Connecting..." && !isPending && (
-              <div className="flex flex-1 items-center justify-center">
-                <p className="text-xs uppercase tracking-wider text-neutral-500">Connecting...</p>
-              </div>
-            )}
           </>
         )}
       </div>
@@ -1662,6 +2069,15 @@ export default function RoomChatPage() {
         open={gifPickerOpen}
         onClose={() => setGifPickerOpen(false)}
         onSelect={(gif) => void onSendGif(gif)}
+      />
+
+      <ImageViewer
+        mode="send"
+        file={pendingMediaFile}
+        open={Boolean(pendingMediaFile)}
+        onClose={() => setPendingMediaFile(null)}
+        onSend={(file, caption) => void handleSendMedia(file, caption)}
+        sending={mediaSending}
       />
 
       {/* Context Menu */}
@@ -1711,6 +2127,22 @@ export default function RoomChatPage() {
           onCancel={() => setSuccessionDialogOpen(false)}
         />
       )}
+
+      {/* Image Viewer */}
+      {viewerMessageId && roomKeyRef.current ? (
+        <ImageViewer
+          mode="view"
+          message={messages.find((m) => m.id === viewerMessageId) ?? null}
+          roomKey={roomKeyRef.current ?? undefined}
+          open={Boolean(viewerMessageId)}
+          onClose={() => setViewerMessageId(null)}
+          onReply={(messageId) => {
+            const msg = messages.find((m) => m.id === messageId);
+            if (msg) handleReply(msg);
+            setViewerMessageId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

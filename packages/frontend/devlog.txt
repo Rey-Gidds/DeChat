@@ -1,0 +1,11 @@
+ ⚠ You are using a non-standard "NODE_ENV" value in your environment. This creates inconsistencies in the project and is strongly advised against. Read more: https://nextjs.org/docs/messages/non-standard-node-env
+   ▲ Next.js 15.5.18
+   - Local:        http://localhost:3111
+   - Network:      http://192.168.56.1:3111
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 6s
+[?25h
+
+C:\Users\REYANSH\OneDrive\Desktop\DeChat\packages\frontend>

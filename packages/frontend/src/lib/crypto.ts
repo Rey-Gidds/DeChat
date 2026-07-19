@@ -5,7 +5,7 @@
 export const DB_NAME = "dechat-crypto-store";
 const STORE_NAME = "private-keys";
 const ROOM_KEY_STORE = "room-keys";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 const ROOM_KEY_VERSIONS_STORE = "room-key-versions";
 const OUTBOX_STORE = "message-outbox";
 
@@ -35,6 +35,15 @@ function getDB(): Promise<IDBDatabase> {
         outboxStore.createIndex("by-status", "status", { unique: false });
         outboxStore.createIndex("by-room-status", ["roomId", "status"], { unique: false });
         outboxStore.createIndex("by-failed-at", "failedAt", { unique: false });
+      }
+
+      // NEW in v5: message-cache and room-cache-meta
+      if (!db.objectStoreNames.contains("message-cache")) {
+        const msgStore = db.createObjectStore("message-cache", { keyPath: "id" });
+        msgStore.createIndex("by-room", "roomId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains("room-cache-meta")) {
+        db.createObjectStore("room-cache-meta", { keyPath: "roomId" });
       }
     };
     request.onsuccess = () => resolve(request.result);

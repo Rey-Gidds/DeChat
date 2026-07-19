@@ -48,6 +48,28 @@ export async function syncMessagesSince(
   return parseJson<{ messages: EncryptedMessageRecord[] }>(res);
 }
 
+export interface ResumeResponse {
+  strategy: "UP_TO_DATE" | "DELTA" | "REPLACE";
+  messages: EncryptedMessageRecord[];
+}
+
+export async function resumeSync(
+  roomId: string,
+  newestCachedMessageId?: string,
+  newestCachedCreatedAt?: string
+): Promise<ResumeResponse> {
+  const params = new URLSearchParams();
+  if (newestCachedMessageId) params.set("newestCachedMessageId", newestCachedMessageId);
+  if (newestCachedCreatedAt) params.set("newestCachedCreatedAt", newestCachedCreatedAt);
+
+  const res = await fetch(
+    `/api/rooms/${roomId}/messages/resume?${params.toString()}`,
+    { credentials: "include" }
+  );
+
+  return parseJson<ResumeResponse>(res);
+}
+
 export interface MessagesAroundResponse {
   messages: EncryptedMessageRecord[];
   targetMessageId: string;
