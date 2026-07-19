@@ -50,6 +50,7 @@ function formatTime(iso: string) {
 const SWIPE_THRESHOLD = 60;
 const LONG_PRESS_MS = 450;
 const MOVE_TOLERANCE = 10;
+const SWIPE_LOCK_ANGLE = 30; // degrees — must be mostly horizontal
 
 // Detect touch-capable device once
 const isTouchDevice = typeof window !== "undefined" && "ontouchstart" in window;
@@ -78,9 +79,13 @@ export function MessageBubble({
   const gestureRef = useRef({
     startX: 0,
     startY: 0,
-    fired: false,
+    fired: false,       // long-press fired
+    swiping: false,     // locked into swipe gesture
+    scrolling: false,   // locked into scroll gesture
   });
   const bubbleRef = useRef<HTMLDivElement>(null);
+  // We attach touch listeners imperatively so we can use { passive: false }
+  const touchRootRef = useRef<HTMLDivElement>(null);
 
   // Decrypt reply preview once
   const [replyPreview, setReplyPreview] = useState<string | null>(null);
@@ -116,98 +121,7 @@ export function MessageBubble({
     return () => { cancelled = true; };
   }, [message.replyTo, roomKey, roomId]);
 
-  // Show info button briefly on hover (desktop only, via CSS already)
-  // On mobile we show it when long-press fires or as fallback
-
-  // ── Gesture handlers ──────────────────────────────────────────────
-
-  // Only attach swipe/long-press on touch devices
-  const enableGestures = isTouchDevice;
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!enableGestures) return;
-      // Ignore non-primary mouse buttons
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-
-      const g = gestureRef.current;
-      g.startX = e.clientX;
-      g.startY = e.clientY;
-      g.fired = false;
-
-      // Long-press timer
-      longPressTimerRef.current = setTimeout(() => {
-        g.fired = true;
-        setShowInfoBtn(true);
-        // Open context menu at the bubble's position
-        const rect = e.currentTarget.getBoundingClientRect();
-        onShowMenu?.(
-          message,
-          isOwn ? rect.left + rect.width : rect.left,
-          rect.top
-        );
-      }, LONG_PRESS_MS);
-    },
-    [enableGestures, isOwn, message, onShowMenu]
-  );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!enableGestures) return;
-      const g = gestureRef.current;
-      if (g.fired) return;
-
-      const deltaX = e.clientX - g.startX;
-      const deltaY = e.clientY - g.startY;
-
-      // Cancel long press if moved too much
-      if (Math.hypot(deltaX, deltaY) > MOVE_TOLERANCE) {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
-      }
-
-      // Swipe-to-reply: only if horizontal movement dominates
-      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > MOVE_TOLERANCE) {
-        const direction = isOwn ? "left" : "right";
-        const effectiveDelta = direction === "right" ? deltaX : -deltaX;
-
-        if (effectiveDelta > 0) {
-          // Clamp the swipe to the bubble's own width so it never leaves the chat box
-          const bubbleEl = bubbleRef.current;
-          const maxSwipe = bubbleEl ? bubbleEl.offsetWidth * 0.5 : 120;
-          setSwipeDelta(Math.min(effectiveDelta, maxSwipe));
-        }
-      }
-    },
-    [enableGestures, isOwn]
-  );
-
-  const handlePointerUp = useCallback(() => {
-    if (!enableGestures) return;
-
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-
-    const g = gestureRef.current;
-    if (g.fired) {
-      g.fired = false;
-      return;
-    }
-
-    // Check if swipe crossed threshold by recomputing delta
-    // Since we don't have the final pointer coords here,
-    // we check the last known swipeDelta
-    if (swipeDelta >= SWIPE_THRESHOLD) {
-      onReply?.(message);
-    }
-
-    // Spring back — CSS transition handles the animation
-    setSwipeDelta(0);
-  }, [enableGestures, swipeDelta, onReply, message]);
+  // ── Gesture handlers (touch events, imperative, passive:false) ──────
 
   const handleContextMenuEvent = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -222,30 +136,151 @@ export function MessageBubble({
     [isOwn, message, onShowMenu]
   );
 
-  // Additional pointer up handler on window to catch up events outside the bubble
+  // Imperative touch listeners attached with { passive: false } so we can
+  // call preventDefault() to suppress browser text-selection and the
+  // native "copy" callout on long-press.
   useEffect(() => {
-    if (!enableGestures) return;
-    const handleWindowUp = () => {
+    if (!isTouchDevice) return;
+    const el = touchRootRef.current;
+    if (!el) return;
+
+    const g = gestureRef.current;
+
+    function onTouchStart(e: TouchEvent) {
+      const touch = e.touches[0];
+      g.startX = touch.clientX;
+      g.startY = touch.clientY;
+      g.fired = false;
+      g.swiping = false;
+      g.scrolling = false;
+
+      // NOTE: We do NOT call e.preventDefault() here because that would block
+      // click events on buttons inside the bubble (e.g. reply-to strip, retry).
+      // Instead, CSS user-select:none on the bubble prevents text selection,
+      // and we suppress the native "copy" callout by not using pointer events.
+
+      longPressTimerRef.current = setTimeout(() => {
+        if (g.swiping || g.scrolling) return;
+        g.fired = true;
+        setShowInfoBtn(true);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        onShowMenu?.(
+          message,
+          isOwn ? rect.left + rect.width : rect.left,
+          rect.top
+        );
+      }, LONG_PRESS_MS);
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      const touch = e.touches[0];
+      const dx = touch.clientX - g.startX;
+      const dy = touch.clientY - g.startY;
+      const dist = Math.hypot(dx, dy);
+
+      // Once locked into scrolling, let the list scroll freely
+      if (g.scrolling) return;
+
+      // Determine gesture direction lock after moving past tolerance
+      if (!g.swiping && dist > MOVE_TOLERANCE) {
+        const angleRad = Math.abs(Math.atan2(dy, dx));
+        const angleDeg = angleRad * (180 / Math.PI);
+        // Horizontal if angle < SWIPE_LOCK_ANGLE or > 180 - SWIPE_LOCK_ANGLE
+        const isHorizontal = angleDeg < SWIPE_LOCK_ANGLE || angleDeg > 180 - SWIPE_LOCK_ANGLE;
+
+        if (isHorizontal) {
+          g.swiping = true;
+        } else {
+          g.scrolling = true;
+          // Cancel long-press when user is clearly scrolling
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+          return;
+        }
+      }
+
+      // Cancel long-press if we moved significantly
+      if (dist > MOVE_TOLERANCE && longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      if (g.swiping && el) {
+        // Prevent the page from scrolling while swiping a bubble
+        e.preventDefault();
+
+        // Own messages swipe left (negative dx), others swipe right (positive dx)
+        const effectiveDelta = isOwn ? -dx : dx;
+        if (effectiveDelta > 0) {
+          const maxSwipe = el.offsetWidth * 0.45;
+          // Rubber-band effect: resistance increases past threshold
+          const clamped = Math.min(effectiveDelta, maxSwipe);
+          setSwipeDelta(clamped);
+        } else {
+          setSwipeDelta(0);
+        }
+      }
+    }
+
+    function onTouchEnd() {
       if (longPressTimerRef.current) {
         clearTimeout(longPressTimerRef.current);
         longPressTimerRef.current = null;
       }
-      const g = gestureRef.current;
-      if (g.fired) {
+
+      if (!g.fired && g.swiping) {
+        // Read state via a ref snapshot to avoid stale closure
+        setSwipeDelta((prev) => {
+          if (prev >= SWIPE_THRESHOLD) {
+            // Trigger reply after state flush
+            setTimeout(() => onReply?.(message), 0);
+          }
+          return 0;
+        });
+      } else {
         g.fired = false;
-        return;
+        setSwipeDelta(0);
       }
-      if (swipeDelta >= SWIPE_THRESHOLD) {
-        onReply?.(message);
+
+      g.swiping = false;
+      g.scrolling = false;
+    }
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    // Suppress the native OS context menu (long-press copy callout on iOS/Android).
+    // We check that no mouse button was pressed to distinguish a touch long-press
+    // from a desktop right-click (which should still reach our React handler).
+    const onNativeContextMenu = (e: MouseEvent) => {
+      // e.button === -1 indicates the event was NOT triggered by a mouse button,
+      // i.e. it was triggered by a touch long-press.
+      if (e.button === -1 || e.buttons === 0) {
+        e.preventDefault();
       }
-      setSwipeDelta(0);
     };
-    window.addEventListener("pointerup", handleWindowUp);
-    return () => window.removeEventListener("pointerup", handleWindowUp);
-  }, [enableGestures, swipeDelta, onReply, message]);
+    el.addEventListener("contextmenu", onNativeContextMenu);
+
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+      el.removeEventListener("contextmenu", onNativeContextMenu);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwn, message, onShowMenu, onReply]);
 
   return (
-    <div id={`msg-${message.id}`} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
+    <div
+      id={`msg-${message.id}`}
+      ref={touchRootRef}
+      className={`flex select-none ${isOwn ? "justify-end" : "justify-start"}`}
+    >
       <div
         className={`max-w-[85%] sm:max-w-[70%] ${
           isOwn ? "items-end" : "items-start"
@@ -288,17 +323,10 @@ export function MessageBubble({
             role="button"
             tabIndex={0}
             aria-haspopup="menu"
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={() => {
-              if (longPressTimerRef.current) {
-                clearTimeout(longPressTimerRef.current);
-                longPressTimerRef.current = null;
-              }
-            }}
             onContextMenu={handleContextMenuEvent}
-            className={`relative text-sm leading-relaxed transition-transform duration-200 ease-out ${
+            className={`relative text-sm leading-relaxed ${
+              swipeDelta > 0 ? "transition-none" : "transition-transform duration-200 ease-out"
+            } ${
               isOwn
                 ? "bg-white text-black"
                 : "border border-neutral-700 bg-neutral-900 text-neutral-100"
@@ -312,6 +340,8 @@ export function MessageBubble({
                     ? `translateX(${-swipeDelta}px)`
                     : `translateX(${swipeDelta}px)`
                   : undefined,
+              userSelect: "none",
+              WebkitUserSelect: "none",
             }}
           >
             {/* ── Reply strip ── */}
@@ -521,6 +551,7 @@ export function MessageList({
       ref={listRef}
       onScroll={onScroll}
       className="flex-1 overflow-y-auto bg-grid-blueprint px-3 py-4 sm:px-4"
+      style={{ touchAction: "pan-y", overscrollBehavior: "contain" }}
     >
       {/* ── Top sentinel: triggers infinite scroll upward ── */}
       <div ref={topSentinelRef} className="h-px" />

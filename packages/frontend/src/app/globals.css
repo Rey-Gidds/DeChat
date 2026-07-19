@@ -16,6 +16,12 @@ body {
   color: var(--foreground);
   background-color: var(--background);
   font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  /* Prevent iOS rubber-band scroll from revealing the gap below the input */
+  overscroll-behavior: none;
+  /* Ensure the body never causes an accidental bounce scroll */
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
 }
 
 ::-webkit-scrollbar {

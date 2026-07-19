@@ -57,6 +57,19 @@ export function ChatInput({
     el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_HEIGHT ? "auto" : "hidden";
   }, [draft]);
 
+  // On mobile, when the textarea is focused the keyboard opens.
+  // We scroll the element into view after a short delay to ensure
+  // the visualViewport has already resized (so our keyboardOffset state
+  // is up-to-date) before we scroll.
+  function handleFocus() {
+    const el = textareaRef.current;
+    if (!el) return;
+    // Slight delay so the keyboard has time to open
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 150);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -94,7 +107,13 @@ export function ChatInput({
   ];
 
   return (
-    <div className="shrink-0 border-t border-neutral-800 bg-black px-3 py-3 sm:px-4">
+    <div
+      className="shrink-0 border-t border-neutral-800 bg-black px-3 py-3 sm:px-4"
+      style={{
+        // iOS safe area (notch/home indicator)
+        paddingBottom: `max(0.75rem, env(safe-area-inset-bottom, 0px))`,
+      }}
+    >
       <div className="mx-auto flex max-w-3xl flex-col">
         {/* Reply strip */}
         {replyContext && !isEditMode && (
@@ -162,6 +181,7 @@ export function ChatInput({
               value={draft}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onFocus={handleFocus}
               disabled={disabled}
               placeholder={isEditMode ? "Edit message" : "Message"}
               style={{ resize: "none", overflowY: "hidden" }}

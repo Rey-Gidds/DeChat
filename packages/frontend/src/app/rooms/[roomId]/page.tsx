@@ -336,6 +336,34 @@ export default function RoomChatPage() {
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const [hasNewer, setHasNewer] = useState(false);
 
+  // ── Visual Viewport / keyboard avoidance (mobile) ────────────────────
+  // On iOS Safari and Android Chrome, the software keyboard shrinks the
+  // visualViewport but NOT the layout viewport. We track this gap and push
+  // the whole shell up so the input box stays visible above the keyboard.
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    function update() {
+      // The keyboard height is the difference between the layout viewport
+      // and the visual viewport, minus any page scroll offset.
+      const layoutH = window.innerHeight;
+      const visualH = vv!.height;
+      const offsetTop = vv!.offsetTop;
+      // On iOS the visual viewport also shifts down; account for both.
+      const gap = Math.max(0, layoutH - visualH - offsetTop);
+      setKeyboardOffset(gap);
+    }
+
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
   const roomKeyRef = useRef<CryptoKey | null>(null);
   const [roomKeyRotation, setRoomKeyRotation] = useState<RoomKeyRotationState>({
     pendingKeyRotation: false,
@@ -1890,7 +1918,14 @@ export default function RoomChatPage() {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-black overflow-hidden">
+    <div
+      className="flex flex-col bg-black overflow-hidden"
+      style={{
+        height: `calc(100dvh - ${keyboardOffset}px)`,
+        // Fallback for browsers without dvh support
+        minHeight: 0,
+      }}
+    >
       <div className="relative flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
         <RoomHeader
           roomName={roomMeta?.room.name ?? "Room"}
