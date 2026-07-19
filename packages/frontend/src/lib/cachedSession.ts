@@ -24,10 +24,13 @@ function extractSessionCacheKey(cookieHeader: string | null): string | null {
   const cookieParts = cookieHeader.split(";").map((c) => c.trim());
 
   // Better Auth cookie name uses underscore (session_token). Older code used
-  // a dash variant (session-token). Support both for safety.
+  // a dash variant (session-token). Support both for safety. Use exact name match
+  // (not startsWith) so we don't accidentally grab the `.sig` companion cookie.
+  const findCookie = (name: string) =>
+    cookieParts.find((c) => c === name || c.startsWith(`${name}=`));
   const sessionCookie =
-    cookieParts.find((c) => c.startsWith("better-auth.session_token=")) ??
-    cookieParts.find((c) => c.startsWith("better-auth.session-token="));
+    findCookie("better-auth.session_token") ??
+    findCookie("better-auth.session-token");
 
   return sessionCookie ?? null;
 }
@@ -90,10 +93,13 @@ export async function getCachedSession(
     // Better Auth uses the database for session validation. Ensure MongoDB is connected
     // before calling getSession, otherwise all protected routes can incorrectly 401.
     await ensureMongoConnected();
-    const session = await auth.api.getSession({
-      headers,
-      query: { disableCookieCache: true },
-    });
+    // Mirror exactly how better-auth's own /api/auth/get-session handler resolves
+    // the session. Passing `query: { disableCookieCache: true }` previously caused
+    // getSession to take a different cookie-resolution path that returns null on
+    // serverless runtimes (Vercel/Render) while working on localhost. We already
+    // disable the cookie cache via `session.cookieCache.enabled: false` in auth.ts,
+    // so forcing it here is both redundant and harmful.
+    const session = await auth.api.getSession({ headers });
 
     if (!session?.session || !session?.user) {
       sessionCache.delete(cacheKey);

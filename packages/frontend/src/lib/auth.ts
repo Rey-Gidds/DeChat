@@ -13,6 +13,16 @@ export const auth = betterAuth({
     trustHost: true,
     basePath: "/api/auth",
     secret: process.env.BETTER_AUTH_SECRET,
+    advanced: {
+        // Required when the app is served over HTTPS behind a proxy (Vercel/Render)
+        // and the cookie must be sent cross-context. Without this, the session
+        // cookie is scoped with sameSite:"lax" and may not be returned to the
+        // API, causing 401 on every protected route in production.
+        defaultCookieAttributes: {
+            sameSite: "none",
+            secure: true,
+        },
+    },
     session: {
         expiresIn: 60 * 60 * 24 * 7,
         updateAge: 60 * 60 * 24,
