@@ -23,12 +23,18 @@ function extractSessionCacheKey(cookieHeader: string | null): string | null {
 
   const cookieParts = cookieHeader.split(";").map((c) => c.trim());
 
-  // Better Auth cookie name uses underscore (session_token). Older code used
-  // a dash variant (session-token). Support both for safety. Use exact name match
-  // (not startsWith) so we don't accidentally grab the `.sig` companion cookie.
+  // Better Auth uses `__Secure-` prefix on cookie names when running over HTTPS
+  // (production on Vercel). Without this prefix the lookup returns null and we
+  // bail out before ever calling auth.api.getSession, causing 401 on all
+  // protected routes even though /api/auth/get-session works fine.
   const findCookie = (name: string) =>
     cookieParts.find((c) => c === name || c.startsWith(`${name}=`));
+
   const sessionCookie =
+    // Production (HTTPS) — __Secure- prefixed names
+    findCookie("__Secure-better-auth.session_token") ??
+    findCookie("__Secure-better-auth.session-token") ??
+    // Development (HTTP) — bare names
     findCookie("better-auth.session_token") ??
     findCookie("better-auth.session-token");
 
@@ -73,7 +79,11 @@ export async function getCachedSession(
   options: GetCachedSessionOptions = {}
 ): Promise<Session | null> {
   const cookieHeader = headers.get("cookie");
-  const cacheKey = extractSessionCacheKey(cookieHeader);
+  // Use the matched session cookie as the cache key; fall back to the full
+  // cookie header if no known session-cookie name was found (e.g. if Better
+  // Auth changes its naming convention). This ensures we still call
+  // auth.api.getSession rather than bailing with null immediately.
+  const cacheKey = extractSessionCacheKey(cookieHeader) ?? cookieHeader;
   if (!cacheKey) return null;
 
   const now = Date.now();
