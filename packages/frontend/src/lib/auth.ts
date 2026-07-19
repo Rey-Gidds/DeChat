@@ -9,7 +9,10 @@ export const auth = betterAuth({
     database: mongodbAdapter(db, {
         transaction: false,
     }),
-    baseURL: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+    // BETTER_AUTH_URL is the canonical server-side variable and is NOT baked at
+    // build time (unlike NEXT_PUBLIC_ vars). On Vercel, set this to your
+    // production URL (e.g. https://your-app.vercel.app).
+    baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     trustHost: true,
     basePath: "/api/auth",
     secret: process.env.BETTER_AUTH_SECRET,
