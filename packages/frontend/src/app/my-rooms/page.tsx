@@ -81,7 +81,6 @@ export default function MyRoomsPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
-        <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">Dashboard</p>
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">My Rooms</h1>
         <p className="mt-2 text-sm text-neutral-500">Manage rooms you own — disable, restore, or adjust settings.</p>
       </div>
@@ -105,38 +104,36 @@ export default function MyRoomsPage() {
             const roomId = r.roomId;
             const isDisabled = Boolean(r.room?.isDisabled);
             return (
-              <div key={roomId} className="border border-neutral-900 bg-black p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Link href={`/rooms/${roomId}`} className="truncate text-sm font-semibold text-white hover:underline">
-                        {r.room?.name || "Unknown Room"}
-                      </Link>
-                      {isDisabled && (
-                        <span className="shrink-0 border border-red-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-red-400">Disabled</span>
-                      )}
+              <Link key={roomId} href={`/rooms/${roomId}`}>
+                <div className="border border-neutral-900 bg-black p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-white hover:underline">
+                          {r.room?.name || "Unknown Room"}
+                        </p>
+                        {isDisabled && (
+                          <span className="shrink-0 border border-red-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-red-400">Disabled</span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-[10px] text-neutral-500">
+                        {r.room?.memberCount ?? 0}/{r.room?.maxMembers ?? 500} members
+                      </p>
                     </div>
-                    <p className="mt-1 text-[10px] text-neutral-500">
-                      {r.room?.memberCount ?? 0}/{r.room?.maxMembers ?? 500} members
-                    </p>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Link href={`/rooms/${roomId}`}>
-                      <Button variant="secondary" size="sm" className="text-[10px]">Open</Button>
-                    </Link>
-                    <Button
-                      variant={isDisabled ? "primary" : "ghost"}
-                      size="sm"
-                      disabled={togglingId === roomId}
-                      onClick={() => void handleToggleDisable(roomId)}
-                      className={`text-[10px] ${isDisabled ? "" : "border border-red-500/30 text-red-400 hover:border-red-500/60"}`}
-                    >
-                      {togglingId === roomId ? "..." : isDisabled ? "Restore" : "Disable"}
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        variant={isDisabled ? "primary" : "ghost"}
+                        size="sm"
+                        disabled={togglingId === roomId}
+                        onClick={() => void handleToggleDisable(roomId)}
+                        className={`text-[10px] ${isDisabled ? "" : "border border-red-500/30 text-red-400 hover:border-red-500/60"}`}
+                      >
+                        {togglingId === roomId ? "..." : isDisabled ? "Restore" : "Disable"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>

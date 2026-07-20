@@ -87,7 +87,6 @@ export default function PendingRequestsPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
-        <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">Requests</p>
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Pending Requests</h1>
         <p className="mt-2 text-sm text-neutral-500">
           Track your room access requests.
@@ -114,45 +113,67 @@ export default function PendingRequestsPage() {
       ) : (
         <div className="space-y-3">
           {rows.map((r) => (
-            <div key={`${r.roomId}:${r.requestedAt}`} className="border border-neutral-900 bg-black p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">
-                    {r.room?.name ?? "Unknown room"}
-                  </p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
-                    Requested {new Date(r.requestedAt).toLocaleString()}
-                  </p>
-                  {r.reviewedAt && (
-                    <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
-                      Reviewed {new Date(r.reviewedAt).toLocaleString()}
+            r.status === "APPROVED" ? (
+              <Link key={r.roomId} href={`/rooms/${r.roomId}`}>
+                <div key={`${r.roomId}:${r.requestedAt}`} className="border border-neutral-900 bg-black p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-white">
+                        {r.room?.name ?? "Unknown room"}
+                      </p>
+                      <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                        Requested {new Date(r.requestedAt).toLocaleString()}
+                      </p>
+                      {r.reviewedAt && (
+                        <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                          Reviewed {new Date(r.reviewedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                        r.status === "APPROVED"
+                          ? "border-green-500/30 text-green-400"
+                          : r.status === "REJECTED"
+                            ? "border-red-500/30 text-red-400"
+                            : "border-neutral-800 text-neutral-400"
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </div>
+                </div>
+            </Link>
+            ) : (
+              <div key={`${r.roomId}:${r.requestedAt}`} className="border border-neutral-900 bg-black p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {r.room?.name ?? "Unknown room"}
                     </p>
-                  )}
-                </div>
-                <span
-                  className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
-                    r.status === "APPROVED"
-                      ? "border-green-500/30 text-green-400"
-                      : r.status === "REJECTED"
-                        ? "border-red-500/30 text-red-400"
-                        : "border-neutral-800 text-neutral-400"
-                  }`}
-                >
-                  {r.status}
-                </span>
-              </div>
-
-              {r.status === "APPROVED" && (
-                <div className="mt-3">
-                  <Link
-                    href={`/rooms/${r.roomId}`}
-                    className="text-xs uppercase tracking-wider text-white underline underline-offset-4"
+                    <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                      Requested {new Date(r.requestedAt).toLocaleString()}
+                    </p>
+                    {r.reviewedAt && (
+                      <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                        Reviewed {new Date(r.reviewedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <span
+                    className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                      r.status === "APPROVED"
+                        ? "border-green-500/30 text-green-400"
+                        : r.status === "REJECTED"
+                          ? "border-red-500/30 text-red-400"
+                          : "border-neutral-800 text-neutral-400"
+                    }`}
                   >
-                    Open room
-                  </Link>
+                    {r.status}
+                  </span>
                 </div>
-              )}
-            </div>
+              </div>
+            )
           ))}
         </div>
       )}

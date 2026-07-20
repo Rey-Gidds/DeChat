@@ -58,7 +58,6 @@ export default function JoinedRoomsPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
-        <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">Rooms</p>
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Joined Rooms</h1>
         <p className="mt-2 text-sm text-neutral-500">All rooms you&apos;re a member of.</p>
       </div>
@@ -97,11 +96,6 @@ export default function JoinedRoomsPage() {
                   {r.role} · {r.room?.memberCount ?? 0}/{r.room?.maxMembers ?? 500} members
                 </p>
               </div>
-              <span className={`shrink-0 border px-2 py-0.5 text-[9px] uppercase tracking-wider ${
-                r.status === "APPROVED" ? "border-green-500/30 text-green-400" : "border-neutral-800 text-neutral-500"
-              }`}>
-                {r.status}
-              </span>
             </Link>
           ))}
         </div>

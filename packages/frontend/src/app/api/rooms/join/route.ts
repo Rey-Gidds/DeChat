@@ -53,8 +53,7 @@ export async function POST(req: Request) {
 
   const now = new Date();
 
-  const joinPolicy = room.joinPolicy ?? "PUBLIC";
-  const desiredStatus = joinPolicy === "PRIVATE" ? "APPROVED" : "PENDING";
+  const desiredStatus = "APPROVED";
 
   const membershipDoc = {
     _id: new ObjectId(),
@@ -63,7 +62,7 @@ export async function POST(req: Request) {
     status: desiredStatus,
     lastVisitedAt: now,
     role: "MEMBER",
-    userIndex: null,
+    userIndex: 0,
     reviewedBy: null,
     reviewedAt: null,
     isBlocked: false,
@@ -71,6 +70,19 @@ export async function POST(req: Request) {
     createdAt: now,
     updatedAt: now,
   };
+
+  if (desiredStatus === "APPROVED") {
+    // Update the rooms doc in the database for direct joins
+    const doc = await db.collection("rooms").findOneAndUpdate(
+      { _id: roomId },
+      {
+        $inc: { memberCount: 1, nextUserIndex: 1 },
+      },
+      { returnDocument: "before" }
+    );
+    const roomDoc = doc && ("value" in doc ? (doc.value as any) : doc);
+    membershipDoc.userIndex = typeof roomDoc?.nextUserIndex === "number" ? roomDoc.nextUserIndex : 1;
+  }
 
   await db.collection("room_memberships").insertOne(membershipDoc);
 

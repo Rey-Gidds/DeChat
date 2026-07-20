@@ -109,6 +109,7 @@ type RoomMeta = {
     roomLink: string;
     maxMembers: number;
     isDisabled?: boolean;
+    joinPolicy?: string;
   };
   memberCount: number;
   membership: { status: string; role: string } | null;
@@ -1956,6 +1957,7 @@ export default function RoomChatPage() {
             roomId={roomId}
             roomName={roomMeta.room.name}
             roomLink={roomMeta.room.roomLink}
+            joinPolicy={roomMeta.room.joinPolicy}
             members={members as RoomMemberEntry[]}
             onlineUserIds={onlineUserIds}
             viewerRole={(roomMeta.membership?.role || "MEMBER") as ViewerRole}

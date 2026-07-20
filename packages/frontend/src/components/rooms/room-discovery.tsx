@@ -305,7 +305,7 @@ export function RoomDiscovery() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or description..."
+              placeholder="Search Rooms..."
               className="w-full border border-neutral-800 bg-black py-3 pl-10 pr-4 text-sm text-white outline-none focus:border-neutral-500"
             />
           </div>

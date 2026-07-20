@@ -13,9 +13,9 @@ import { KeygenDialog } from "@/components/key-recovery/keygen-dialog";
 import { Compass, Clock, List, Grid3X3, User } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Discover", icon: Compass },
   { href: "/rooms/joined", label: "Joined", icon: List },
   { href: "/pending", label: "Requests", icon: Clock },
+  { href: "/", label: "Discover", icon: Compass },
   { href: "/my-rooms", label: "My Rooms", icon: Grid3X3 },
   { href: "/profile", label: "Profile", icon: User },
 ];

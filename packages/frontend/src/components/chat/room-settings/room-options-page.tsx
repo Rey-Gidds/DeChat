@@ -28,6 +28,7 @@ interface RoomOptionsPageProps {
   roomId: string;
   roomName: string;
   roomLink: string;
+  joinPolicy?: string;
   members: RoomMemberEntry[];
   onlineUserIds: Set<string>;
   viewerRole: ViewerRole;
@@ -73,6 +74,7 @@ export function RoomOptionsPage({
   roomId,
   roomName,
   roomLink,
+  joinPolicy,
   members,
   onlineUserIds,
   viewerRole,
@@ -199,7 +201,7 @@ export function RoomOptionsPage({
   const tabs = [
     { id: "options" as const, label: "Options" },
     { id: "members" as const, label: `Members (${members.length})` },
-    ...(isAdmin ? [{ id: "requests" as const, label: "Requests" }] : []),
+    ...(isAdmin && joinPolicy !== "PRIVATE" ? [{ id: "requests" as const, label: "Requests" }] : []),
   ];
 
   return (
