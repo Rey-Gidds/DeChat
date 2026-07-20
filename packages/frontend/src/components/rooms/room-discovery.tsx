@@ -366,6 +366,15 @@ export function RoomDiscovery() {
               </button>
             </div>
           )}
+
+          {/* End-of-list ripple art + scroll breathing room */}
+          {!nextCursor && (
+            <div className="mt-16 pb-28 sm:pb-20 flex flex-col items-center">
+              <p className="mt-6 text-[10px] uppercase tracking-[0.3em] text-neutral-600">
+                You&apos;ve reached the edge
+              </p>
+            </div>
+          )}
         </>
       )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Reply, Pencil, Trash2 } from "lucide-react";
+import { Reply, Pencil, Trash2, Copy } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 interface MessageContextMenuProps {
@@ -8,6 +8,7 @@ interface MessageContextMenuProps {
   y: number;
   isOwn: boolean;
   canEdit: boolean;
+  copyText?: string;
   onReply: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -19,6 +20,7 @@ export function MessageContextMenu({
   y,
   isOwn,
   canEdit,
+  copyText,
   onReply,
   onEdit,
   onDelete,
@@ -52,7 +54,8 @@ export function MessageContextMenu({
 
   // Clamp position to viewport
   const menuWidth = 180;
-  const menuHeight = isOwn ? (canEdit ? 132 : 88) : 44;
+  const itemCount = (copyText ? 1 : 0) + 1 + (isOwn && canEdit ? 1 : 0) + (isOwn ? 1 : 0);
+  const menuHeight = itemCount * 44;
   const clampedX = Math.min(x, window.innerWidth - menuWidth - 8);
   const clampedY = Math.min(y, window.innerHeight - menuHeight - 8);
 
@@ -63,6 +66,20 @@ export function MessageContextMenu({
       className="fixed z-50 w-[180px] border border-neutral-700 bg-neutral-900 shadow-xl"
       style={{ left: clampedX, top: clampedY }}
     >
+      <button
+        role="menuitem"
+        onClick={() => {
+          if (copyText) {
+            navigator.clipboard.writeText(copyText).catch(() => {});
+          }
+          onClose();
+        }}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-neutral-300 hover:bg-neutral-800 transition-colors"
+      >
+        <Copy size={14} />
+        Copy
+      </button>
+
       <button
         role="menuitem"
         onClick={() => {

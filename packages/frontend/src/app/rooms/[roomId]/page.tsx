@@ -2130,6 +2130,13 @@ export default function RoomChatPage() {
             })() &&
             contextMenu.message.messageType === "text"
           }
+          copyText={
+            contextMenu.message.messageType === "text"
+              ? contextMenu.message.body
+              : contextMenu.message.mediaMetadata && "caption" in contextMenu.message.mediaMetadata
+                ? contextMenu.message.mediaMetadata.caption
+                : undefined
+          }
           onReply={() => handleReply(contextMenu.message)}
           onEdit={() => handleEditMessage(contextMenu.message)}
           onDelete={() => handleDeleteMessage(contextMenu.message)}

@@ -376,7 +376,6 @@ export function MessageBubble({
                 height={meta.height}
                 thumbnailKey={"thumbnailKey" in meta ? meta.thumbnailKey : undefined}
                 thumbnailIv={"thumbnailIv" in meta ? meta.thumbnailIv : undefined}
-                caption={"caption" in meta ? meta.caption : undefined}
                 ivBase={"ivBase" in meta ? meta.ivBase : undefined}
                 chunkSize={"chunkSize" in meta ? meta.chunkSize : undefined}
                 isOwn={isOwn}

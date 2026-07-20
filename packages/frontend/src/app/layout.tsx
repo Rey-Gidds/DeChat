@@ -1,10 +1,27 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css"
 import { AppShell } from "@/components/layout/app-shell";
 
 export const metadata: Metadata = {
   title: "DeChat | Privacy-First Realtime Chat",
   description: "Secure, pseudonymous, and fully end-to-end encrypted messaging rooms.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    title: "DeChat",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: "/icons/dechat_logo_192.png",
+    apple: "/icons/dechat_logo_192.png",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -15,7 +32,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

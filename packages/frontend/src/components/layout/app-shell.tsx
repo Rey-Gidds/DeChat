@@ -34,7 +34,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const showKeygen = session?.user && !isPending && !isAuthPage && !(session.user as any).encryptionEnabled;
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-black text-neutral-200">
+    <div className="flex h-screen flex-col overflow-x-hidden bg-black text-neutral-200">
       <KeyStatusBanner />
       <GlobalRecoveryDialog />
       {showKeygen && (
@@ -50,7 +50,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         <header className="sticky top-0 z-40 border-b border-neutral-800 bg-black/95 backdrop-blur-sm">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/icons/Gemini_Generated_Image_nsovoqnsovoqnsov.png" alt="DeChat" width={26} height={26} />
+              <Image src="/icons/dechat_logo_orig.png" alt="DeChat" width={26} height={26} />
               <span className="text-sm font-semibold tracking-[0.2em] text-white uppercase">
                 DeChat
               </span>
@@ -126,7 +126,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </header>
       )}
 
-      <main className={`flex-1 ${isRoomPage ? "" : "pb-20 sm:pb-0"}`}>{children}</main>
+      <main className={`flex-1 min-h-0 ${isRoomPage ? "" : "overflow-y-auto pb-20 sm:pb-0"}`}>{children}</main>
 
       {/* Mobile footer nav */}
       {!isRoomPage && session?.user && (

@@ -16,4 +16,5 @@
 - Info/context button must be positioned beside each message bubble (not overlapping it) and open a floating popover/dialog with action options. Confidence: 0.85
 - Swipe-to-reply gestures must be mobile-only, guarded by pointer type detection — disable swipe interactions on desktop/laptop. Confidence: 0.85
 - Swipe gestures must be bounded within the chat box horizontally and spring back to original position when released below threshold. Confidence: 0.80
+- For mobile, implement custom long-press handlers for copy/action menus instead of relying on default browser context menu behavior, which doesn't work reliably on mobile devices. Confidence: 0.65
 

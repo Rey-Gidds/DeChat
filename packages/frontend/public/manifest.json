@@ -1,0 +1,24 @@
+{
+  "name": "DeChat",
+  "short_name": "DeChat",
+  "description": "Secure, pseudonymous, and fully end-to-end encrypted messaging rooms.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#323232",
+  "theme_color": "#323232",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/dechat_logo_192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/dechat_logo_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

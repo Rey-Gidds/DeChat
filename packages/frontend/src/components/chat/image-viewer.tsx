@@ -75,10 +75,36 @@ export function ImageViewer({
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        if (mode === "send") captionRef.current?.focus();
+        if (mode === "send") {
+          captionRef.current?.focus();
+          setTimeout(() => {
+            captionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }, 150);
+        }
       }, 200);
     }
   }, [open, mode]);
+
+  // Keyboard avoidance — track visualViewport gap
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    function update() {
+      const layoutH = window.innerHeight;
+      const visualH = vv!.height;
+      const offsetTop = vv!.offsetTop;
+      const gap = Math.max(0, layoutH - visualH - offsetTop);
+      setKeyboardOffset(gap);
+    }
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [open]);
 
   // -- Shared state --
   const [scaleIndex, setScaleIndex] = useState(0);
@@ -285,7 +311,10 @@ export function ImageViewer({
       </div>
 
       {/* ── Bottom bar ── */}
-      <div className="shrink-0 border-t border-neutral-800 bg-black px-4 py-3">
+      <div
+        className="shrink-0 border-t border-neutral-800 bg-black px-4 py-3"
+        style={{ paddingBottom: `calc(12px + ${keyboardOffset}px)` }}
+      >
         {mode === "view" ? (
           /* View mode: reply input */
           <div className="flex items-center gap-2">

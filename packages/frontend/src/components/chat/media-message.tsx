@@ -15,8 +15,6 @@ interface MediaMessageProps {
   thumbnailKey?: string;
   thumbnailIv?: string;
   isOwn?: boolean;
-  /** Optional caption to render below the media bubble. */
-  caption?: string;
   /** Per-chunk IV base for progressive video streaming (Phase D). */
   ivBase?: string;
   /** Plaintext chunk size in bytes for progressive streaming. */
@@ -40,7 +38,6 @@ export function MediaMessage({
   height,
   thumbnailKey,
   thumbnailIv,
-  caption,
   ivBase,
   chunkSize,
   onImageClick,
@@ -131,9 +128,6 @@ export function MediaMessage({
           <AlertTriangle size={16} className="text-neutral-600" />
           <span className="ml-1.5 text-[10px] text-neutral-600">Failed to load media</span>
         </div>
-        {caption && (
-          <p className="mt-1.5 text-[13px] text-neutral-300">{caption}</p>
-        )}
       </div>
     );
   }
@@ -145,9 +139,6 @@ export function MediaMessage({
           className="animate-pulse bg-neutral-800 rounded-sm"
           style={{ aspectRatio: `${width} / ${height}`, maxHeight: 384 }}
         />
-        {caption && (
-          <p className="mt-1.5 text-[13px] text-neutral-300">{caption}</p>
-        )}
       </div>
     );
   }
@@ -168,9 +159,6 @@ export function MediaMessage({
           />
           {renderOverlay()}
         </div>
-        {caption && (
-          <p className="mt-1.5 text-[13px] text-neutral-300">{caption}</p>
-        )}
       </div>
     );
   }
@@ -190,9 +178,6 @@ export function MediaMessage({
         </video>
         {renderOverlay()}
       </div>
-      {caption && (
-        <p className="mt-1.5 text-[13px] text-neutral-300">{caption}</p>
-      )}
     </div>
   );
 }
