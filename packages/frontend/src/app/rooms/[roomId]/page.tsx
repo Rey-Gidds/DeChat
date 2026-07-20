@@ -365,6 +365,21 @@ export default function RoomChatPage() {
     };
   }, []);
 
+  // When the keyboard opens (keyboardOffset > 0), scroll the message list
+  // to the bottom so the latest messages stay visible above the input box.
+  // This matches WhatsApp/Telegram behavior — the viewport shrinks but the
+  // messages stay pinned to the bottom.
+  useEffect(() => {
+    if (keyboardOffset > 0 && shouldStickToBottomRef.current) {
+      const el = listRef.current;
+      if (!el) return;
+      // Use requestAnimationFrame so the layout has settled before scrolling
+      requestAnimationFrame(() => {
+        el.scrollTo({ top: el.scrollHeight, behavior: "instant" as ScrollBehavior });
+      });
+    }
+  }, [keyboardOffset]);
+
   const roomKeyRef = useRef<CryptoKey | null>(null);
   const [roomKeyRotation, setRoomKeyRotation] = useState<RoomKeyRotationState>({
     pendingKeyRotation: false,

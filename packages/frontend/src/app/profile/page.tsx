@@ -50,6 +50,7 @@ export default function ProfilePage() {
 
   // PFP state
   const [uploadingPfp, setUploadingPfp] = useState(false);
+  const [pfpError, setPfpError] = useState("");
 
   // Recovery kit state
   const [showRecoveryDownload, setShowRecoveryDownload] = useState(false);
@@ -133,17 +134,17 @@ export default function ProfilePage() {
     if (!file) return;
 
     if (file.size > 1 * 1024 * 1024) {
-      setError("Image must be under 1 MB");
+      setPfpError("Image must be under 1 MB");
       return;
     }
 
     if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
-      setError("Only JPEG, PNG, GIF, and WebP images are allowed");
+      setPfpError("Only JPEG, PNG, GIF, and WebP images are allowed");
       return;
     }
 
     setUploadingPfp(true);
-    setError("");
+    setPfpError("");
     try {
       const reader = new FileReader();
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -162,7 +163,7 @@ export default function ProfilePage() {
       if (!res.ok) throw new Error(data.error || "Failed to upload picture");
       setProfile((prev) => (prev ? { ...prev, pfp: data.pfp } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to upload picture");
+      setPfpError(err instanceof Error ? err.message : "Failed to upload picture");
     } finally {
       setUploadingPfp(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -179,7 +180,7 @@ export default function ProfilePage() {
       if (!res.ok) throw new Error("Failed to remove picture");
       setProfile((prev) => (prev ? { ...prev, pfp: null } : prev));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove picture");
+      setPfpError(err instanceof Error ? err.message : "Failed to remove picture");
     } finally {
       setUploadingPfp(false);
     }
@@ -269,6 +270,20 @@ export default function ProfilePage() {
                 </button>
               )}
             </div>
+
+            {/* Inline PFP error notification — dismissable, doesn't block the page */}
+            {pfpError && (
+              <div className="mb-3 flex items-center gap-2 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-left">
+                <span className="flex-1 text-[10px] text-amber-400">{pfpError}</span>
+                <button
+                  onClick={() => setPfpError("")}
+                  className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-amber-500 hover:bg-amber-500/20 hover:text-amber-300 transition"
+                  aria-label="Dismiss"
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            )}
 
             {/* Name display / edit */}
             {editingName ? (
