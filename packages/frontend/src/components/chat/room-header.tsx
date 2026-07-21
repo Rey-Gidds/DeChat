@@ -5,16 +5,12 @@ import Link from "next/link";
 
 interface RoomHeaderProps {
   roomName: string;
-  memberCount: number;
-  status: string;
   showOptions: boolean;
   onToggleOptions: () => void;
 }
 
 export function RoomHeader({
   roomName,
-  memberCount,
-  status,
   showOptions,
   onToggleOptions,
 }: RoomHeaderProps) {
@@ -29,10 +25,7 @@ export function RoomHeader({
       </Link>
 
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-semibold text-white">{roomName}</h1>
-        <p className="truncate text-[11px] text-neutral-500">
-          {status} · {memberCount} members
-        </p>
+        <h1 className="truncate text-l font-semibold text-white">{roomName}</h1>
       </div>
 
       <button

@@ -1952,8 +1952,6 @@ export default function RoomChatPage() {
       <div className="relative flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
         <RoomHeader
           roomName={roomMeta?.room.name ?? "Room"}
-          memberCount={roomMeta?.memberCount ?? 0}
-          status={status}
           showOptions={showOptions}
           onToggleOptions={() => setShowOptions((prev) => !prev)}
         />
