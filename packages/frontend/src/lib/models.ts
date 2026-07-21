@@ -15,8 +15,8 @@ export const CreateRoomSchema = z.object({
   maxMembers: z
     .number()
     .int()
-    .min(2, "Room maxMembers must be at least 2")
-    .max(50_000, "Room maxMembers is too large")
+    .min(2, "Room must have at least 2 members")
+    .max(500, "Maximum 500 members allowed per room")
     .default(500),
 });
 

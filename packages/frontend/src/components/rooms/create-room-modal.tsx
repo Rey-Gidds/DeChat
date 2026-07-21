@@ -256,7 +256,7 @@ export function CreateRoomModal({
               <input
                 type="number"
                 min={2}
-                max={50000}
+                max={500}
                 value={maxMembers}
                 onChange={(e) => setMaxMembers(Number(e.target.value))}
                 className="w-full border border-neutral-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-neutral-500"
