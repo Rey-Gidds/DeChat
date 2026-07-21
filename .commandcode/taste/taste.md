@@ -4,6 +4,7 @@
 
 # architecture
 - Reply subdocument previews must persist and display correctly even after the quoted (original) message is deleted — no cascade update of `replyTo.deletedAt` on replies. Confidence: 0.85
+- All room joining (including room link-based joining) must be fully request-based — never direct. This ensures encryption keys are properly delivered to the joining member during the join handshake. Confidence: 0.80
 
 # frontend
 - Always follow the application's existing theme/style when implementing any frontend component. Confidence: 0.85

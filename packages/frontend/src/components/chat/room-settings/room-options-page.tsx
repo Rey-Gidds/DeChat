@@ -201,7 +201,7 @@ export function RoomOptionsPage({
   const tabs = [
     { id: "options" as const, label: "Options" },
     { id: "members" as const, label: `Members (${members.length})` },
-    ...(isAdmin && joinPolicy !== "PRIVATE" ? [{ id: "requests" as const, label: "Requests" }] : []),
+    ...(isAdmin ? [{ id: "requests" as const, label: "Requests" }] : []),
   ];
 
   return (

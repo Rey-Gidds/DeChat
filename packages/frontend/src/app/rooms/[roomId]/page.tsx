@@ -1435,14 +1435,21 @@ export default function RoomChatPage() {
     const messageId = pendingDeleteId;
     setPendingDeleteId(null);
 
-    // Optimistically remove
+    // Optimistically remove from UI
     setMessages((prev) => prev.filter((m) => m.id !== messageId));
+
+    // Optimistic messages exist only in the local outbox — clean up there
+    if (messageId.startsWith("optimistic:")) {
+      const clientMessageId = messageId.replace("optimistic:", "");
+      await deleteOutboxEntry(clientMessageId).catch(() => undefined);
+      return;
+    }
 
     try {
       const response = await deleteEncryptedMessage({ roomId, messageId });
       if (!response.ok) throw new Error(response.error || "Delete failed");
+      void removeFromCache(roomId, messageId);
     } catch (err) {
-      // Re-add message on failure — the socket event would handle it anyway
       setToast(err instanceof Error ? err.message : "Failed to delete message");
     }
   }

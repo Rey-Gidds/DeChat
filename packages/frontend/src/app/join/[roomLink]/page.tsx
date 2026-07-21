@@ -30,35 +30,19 @@ export default function JoinByLinkPage() {
     void requestJoinByLink(roomLink)
       .then((raw) => {
         const data = raw as { room?: { _id?: string; id?: string }; membership?: { status?: string } };
+        if (data.membership?.status === "PENDING") {
+          router.replace("/pending");
+          return;
+        }
         const roomId = data.room?._id?.toString?.() ?? data.room?.id;
         if (roomId) {
-          if (data.membership?.status === "PENDING") {
-            router.replace(`/pending`);
-            return;
-          }
           router.replace(`/rooms/${roomId}`);
         } else {
           setError("Room not found");
         }
       })
       .catch((err: Error) => {
-        const message = err.message || "Failed to join";
-        if (message.includes("Already a member")) {
-          void fetch("/api/rooms/join", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ roomLink }),
-          })
-            .then((r) => r.json())
-            .then((data) => {
-              const id = data.room?._id?.toString?.() ?? data.room?.id;
-              if (id) router.replace(`/rooms/${id}`);
-            })
-            .catch(() => setError(message));
-          return;
-        }
-        setError(message);
+        setError(err.message || "Failed to join");
         setStatus("");
       });
   }, [isPending, session, params.roomLink, router]);
