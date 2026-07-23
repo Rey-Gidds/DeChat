@@ -33,12 +33,12 @@ export async function isRoomDisabled(roomId: string): Promise<boolean> {
   return Boolean(room?.isDisabled);
 }
 
-export async function getSenderInfo(roomId: string, userId: string): Promise<{ name: string | null; userIndex: number | null }> {
+export async function getSenderInfo(roomId: string, userId: string): Promise<{ name: string | null; userIndex: number | null; pfp: string | null }> {
   const db = await getDb();
   const [user, membership] = await Promise.all([
     db.collection("user").findOne(
       { _id: new ObjectId(userId) },
-      { projection: { name: 1, email: 1 } }
+      { projection: { name: 1, email: 1, pfp: 1 } }
     ),
     db.collection("room_memberships").findOne(
       { roomId: new ObjectId(roomId), userId: new ObjectId(userId) },
@@ -48,6 +48,7 @@ export async function getSenderInfo(roomId: string, userId: string): Promise<{ n
   return {
     name: user?.name || user?.email || null,
     userIndex: membership?.userIndex ?? null,
+    pfp: (user?.pfp as string) ?? null,
   };
 }
 
@@ -140,7 +141,7 @@ export async function fetchMessagesSince(
   const senderIds = [...new Set(messages.map((doc: any) => doc.senderId.toHexString()))];
   const senderObjectIds = senderIds.map((id) => new ObjectId(id));
   const [users, memberships] = await Promise.all([
-    db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1 }).toArray(),
+    db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray(),
     db.collection("room_memberships").find({ roomId: roomObjectId, userId: { $in: senderObjectIds } }).project({ userId: 1, userIndex: 1 }).toArray(),
   ]);
   const userMap = new Map(users.map((u: any) => [u._id.toHexString(), u]));
@@ -176,6 +177,7 @@ export async function fetchMessagesSince(
       createdAt: (doc.createdAt as Date).toISOString(),
       senderName: user?.name || user?.email || null,
       senderUserIndex: membership?.userIndex ?? null,
+      senderPfp: (user?.pfp as string) ?? null,
     };
   });
 }
@@ -236,12 +238,13 @@ export async function updateMessageContent(
   senderId: string,
   ciphertext: string,
   iv: string,
-  authTag: string
+  authTag: string,
+  editCount: number
 ) {
   const db = await getDb();
   const result = await db.collection("room_messages").updateOne(
     { _id: new ObjectId(messageId), roomId: new ObjectId(roomId), senderId: new ObjectId(senderId) },
-    { $set: { ciphertext, iv, authTag, editedAt: new Date() } }
+    { $set: { ciphertext, iv, authTag, editedAt: new Date(), editCount } }
   );
   return result.matchedCount > 0;
 }

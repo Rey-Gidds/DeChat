@@ -331,6 +331,7 @@ io.on("connection", (socket) => {
                 createdAt: savedMessage.createdAt,
                 senderName: senderInfo.name,
                 senderUserIndex: senderInfo.userIndex,
+                senderPfp: senderInfo.pfp,
                 clientMessageId,
             };
             // ACK back to sender (for outbox reconciliation)
@@ -401,7 +402,14 @@ io.on("connection", (socket) => {
                 ack?.({ ok: false, error: "EDIT_WINDOW_EXPIRED" });
                 return;
             }
-            const updated = await (0, db_1.updateMessageContent)(roomId, payload.messageId, socket.data.userId, ciphertext, iv, authTag);
+            // Max 2 edits allowed
+            const currentEditCount = (typeof message.editCount === "number") ? message.editCount : 0;
+            if (currentEditCount >= 2) {
+                ack?.({ ok: false, error: "MAX_EDITS_REACHED" });
+                return;
+            }
+            const newEditCount = currentEditCount + 1;
+            const updated = await (0, db_1.updateMessageContent)(roomId, payload.messageId, socket.data.userId, ciphertext, iv, authTag, newEditCount);
             if (!updated) {
                 ack?.({ ok: false, error: "MESSAGE_NOT_FOUND" });
                 return;
@@ -419,6 +427,7 @@ io.on("connection", (socket) => {
                 roomKeyVersion: typeof message.roomKeyVersion === "number" ? message.roomKeyVersion : 0,
                 createdAt: (message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt)).toISOString(),
                 editedAt: now.toISOString(),
+                editCount: newEditCount,
                 replyTo: message.replyTo
                     ? {
                         messageId: message.replyTo.messageId.toString(),
@@ -433,6 +442,7 @@ io.on("connection", (socket) => {
                     : null,
                 senderName: senderInfo.name,
                 senderUserIndex: senderInfo.userIndex,
+                senderPfp: senderInfo.pfp,
             };
             ack?.({ ok: true, message: outbound });
             io.to(`room:${roomId}`).emit("message_edited", outbound);
@@ -585,6 +595,24 @@ io.on("connection", (socket) => {
             });
         }
         socket.data.joinedRooms.clear();
+    });
+    // ── Heartbeat ──
+    socket.on("heartbeat", (payload, ack) => {
+        const roomId = payload?.roomId || socket.data.roomId;
+        if (!roomId || !socket.data.userId) {
+            ack?.({ ok: false });
+            return;
+        }
+        presence.heartbeat(roomId, socket.data.userId);
+        ack?.({ ok: true });
+    });
+});
+// Start periodic heartbeat eviction — emits PRESENCE_UPDATED for stale users
+presence.startCleanup((roomId, userId) => {
+    io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
+        roomId,
+        userId,
+        isOnline: false,
     });
 });
 const PORT = process.env.PORT || 3001;

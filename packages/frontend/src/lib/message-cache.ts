@@ -262,3 +262,29 @@ export async function removeFromCache(roomId: string, messageId: string): Promis
   const remaining = await getCachedMessages(roomId);
   await updateCacheMeta(db, roomId, remaining);
 }
+
+/**
+ * Updates a cached message in-place (e.g., after an edit ACK).
+ * Uses put() which overwrites the existing entry by id.
+ */
+export async function updateInCache(
+  roomId: string,
+  messageId: string,
+  updates: Partial<RealtimeRoomMessage>
+): Promise<void> {
+  const db = await getDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction("message-cache", "readwrite");
+    const store = tx.objectStore("message-cache");
+    const req = store.get(messageId);
+    req.onsuccess = () => {
+      const existing = req.result as RealtimeRoomMessage | undefined;
+      if (existing) {
+        store.put({ ...existing, ...updates });
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}

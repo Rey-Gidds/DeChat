@@ -152,6 +152,7 @@ export type EnrichedMembership = MembershipDoc & {
     email?: string;
     publicKey?: string;
     image?: string;
+    pfp?: string | null;
   } | null;
 };
 
@@ -164,7 +165,7 @@ export async function enrichMembershipUsers(
   const users = await db
     .collection("user")
     .find({ _id: { $in: userIds } })
-    .project({ name: 1, email: 1, publicKey: 1, image: 1 })
+    .project({ name: 1, email: 1, publicKey: 1, image: 1, pfp: 1 })
     .toArray();
 
   const userMap = new Map(users.map((u) => [u._id.toString(), u]));

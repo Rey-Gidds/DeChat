@@ -409,6 +409,7 @@ io.on("connection", (socket: AuthedSocket) => {
           createdAt: savedMessage.createdAt,
           senderName: senderInfo.name,
           senderUserIndex: senderInfo.userIndex,
+          senderPfp: senderInfo.pfp,
           clientMessageId,
         };
 
@@ -505,13 +506,22 @@ io.on("connection", (socket: AuthedSocket) => {
           return;
         }
 
+        // Max 2 edits allowed
+        const currentEditCount = (typeof (message as any).editCount === "number") ? (message as any).editCount : 0;
+        if (currentEditCount >= 2) {
+          ack?.({ ok: false, error: "MAX_EDITS_REACHED" });
+          return;
+        }
+
+        const newEditCount = currentEditCount + 1;
         const updated = await updateMessageContent(
           roomId,
           payload.messageId,
           socket.data.userId,
           ciphertext,
           iv,
-          authTag
+          authTag,
+          newEditCount
         );
 
         if (!updated) {
@@ -533,6 +543,7 @@ io.on("connection", (socket: AuthedSocket) => {
           roomKeyVersion: typeof message.roomKeyVersion === "number" ? message.roomKeyVersion : 0,
           createdAt: (message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt)).toISOString(),
           editedAt: now.toISOString(),
+          editCount: newEditCount,
           replyTo: message.replyTo
             ? {
                 messageId: message.replyTo.messageId.toString(),
@@ -547,6 +558,7 @@ io.on("connection", (socket: AuthedSocket) => {
             : null,
           senderName: senderInfo.name,
           senderUserIndex: senderInfo.userIndex,
+          senderPfp: senderInfo.pfp,
         };
 
         ack?.({ ok: true, message: outbound });
@@ -749,6 +761,26 @@ io.on("connection", (socket: AuthedSocket) => {
       });
     }
     socket.data.joinedRooms.clear();
+  });
+
+  // ── Heartbeat ──
+  socket.on("heartbeat", (payload: { roomId?: string }, ack) => {
+    const roomId = payload?.roomId || socket.data.roomId;
+    if (!roomId || !socket.data.userId) {
+      ack?.({ ok: false });
+      return;
+    }
+    presence.heartbeat(roomId, socket.data.userId);
+    ack?.({ ok: true });
+  });
+});
+
+// Start periodic heartbeat eviction — emits PRESENCE_UPDATED for stale users
+(presence as InMemoryPresenceStore).startCleanup((roomId: string, userId: string) => {
+  io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
+    roomId,
+    userId,
+    isOnline: false,
   });
 });
 

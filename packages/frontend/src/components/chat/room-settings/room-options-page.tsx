@@ -5,6 +5,7 @@ import { Copy, Check, Link2 } from "lucide-react";
 import { DebounceSearch } from "./debounce-search";
 import { MemberActionDialog, type ActionMember } from "./member-action-dialog";
 import { approveJoinRequest } from "@/lib/room-membership-client";
+import { Avatar } from "../avatar";
 
 export type ViewerRole = "OWNER" | "ADMIN" | "MEMBER";
 
@@ -13,7 +14,7 @@ export interface RoomMemberEntry {
   role: "OWNER" | "ADMIN" | "MEMBER";
   isOnline?: boolean;
   userIndex?: number | null;
-  user: { name?: string; email?: string; publicKey?: string | null } | null;
+  user: { name?: string; email?: string; publicKey?: string | null; pfp?: string | null } | null;
 }
 
 interface JoinRequest {
@@ -21,7 +22,7 @@ interface JoinRequest {
   membershipId: string;
   createdAt: string;
   reviewedAt?: string | null;
-  user: { name?: string; email?: string; publicKey: string | null } | null;
+  user: { name?: string; email?: string; publicKey: string | null; pfp?: string | null } | null;
 }
 
 interface RoomOptionsPageProps {
@@ -309,6 +310,7 @@ export function RoomOptionsPage({
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${isOnline ? "bg-green-500" : "bg-neutral-700"}`}
                     />
+                    <Avatar pfp={m.user?.pfp} size={28} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-white">
                         {displayName(m)}
@@ -355,12 +357,17 @@ export function RoomOptionsPage({
               <ul className="space-y-2 px-3 pb-4">
                 {requests.map((req) => (
                   <li key={req.userId} className="border border-neutral-900 bg-black p-3">
-                    <p className="truncate text-sm text-white">
-                      {req.user?.name || req.user?.email || "Anonymous"}
-                    </p>
-                    <p className="text-[10px] text-neutral-600">
-                      {new Date(req.createdAt).toLocaleString()}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <Avatar pfp={req.user?.pfp} size={28} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-white">
+                          {req.user?.name || req.user?.email || "Anonymous"}
+                        </p>
+                        <p className="text-[10px] text-neutral-600">
+                          {new Date(req.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
                     <div className="mt-2 flex gap-2">
                       <button
                         type="button"

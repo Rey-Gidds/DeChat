@@ -35,7 +35,7 @@ export function buildOptimisticUiMessage(
  */
 export function reconcileOptimisticMessage(
   clientMessageId: string,
-  persistedMessage: { id: string; createdAt: string; senderName?: string | null; senderUserIndex?: number | null; messageType?: "text" | "image" | "video" | "gif"; replyTo?: ReplyToInfo | null; mediaMetadata?: MediaMetadata },
+  persistedMessage: { id: string; createdAt: string; senderName?: string | null; senderUserIndex?: number | null; senderPfp?: string | null; messageType?: "text" | "image" | "video" | "gif"; replyTo?: ReplyToInfo | null; mediaMetadata?: MediaMetadata },
   decryptedBody: string,
   currentUserId: string,
   setMessages: React.Dispatch<React.SetStateAction<UiMessage[]>>
@@ -51,6 +51,7 @@ export function reconcileOptimisticMessage(
             isOwn: true,
             senderName: persistedMessage.senderName ?? null,
             senderUserIndex: persistedMessage.senderUserIndex ?? null,
+            senderPfp: persistedMessage.senderPfp ?? null,
             messageType: persistedMessage.messageType ?? "text",
             replyTo: persistedMessage.replyTo ?? null,
             mediaMetadata: persistedMessage.mediaMetadata ?? m.mediaMetadata,

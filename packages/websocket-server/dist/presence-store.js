@@ -10,36 +10,74 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.InMemoryPresenceStore = void 0;
-// ---------------------------------------------------------------------------
-// In-memory implementation
-// ---------------------------------------------------------------------------
+const HEARTBEAT_DRIFT_MS = 60_000; // mark offline after 60s without a heartbeat
+const CLEANUP_INTERVAL_MS = 30_000; // scan for stale entries every 30s
 class InMemoryPresenceStore {
-    /** roomId → userId → connectionCount */
+    /** roomId → userId → { connectionCount, lastHeartbeat } */
     state = new Map();
-    connect(roomId, userId) {
+    cleanupTimer = null;
+    /** Start periodic heartbeat eviction. Call once when the server starts. */
+    startCleanup(onStaleUsers) {
+        if (this.cleanupTimer)
+            return;
+        this.cleanupTimer = setInterval(() => {
+            const evicted = this.evictStale();
+            for (const { roomId, userId } of evicted) {
+                onStaleUsers(roomId, userId);
+            }
+        }, CLEANUP_INTERVAL_MS);
+        if (this.cleanupTimer.unref)
+            this.cleanupTimer.unref();
+    }
+    stopCleanup() {
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+            this.cleanupTimer = null;
+        }
+    }
+    getOrCreate(roomId, userId) {
         let room = this.state.get(roomId);
         if (!room) {
             room = new Map();
             this.state.set(roomId, room);
         }
-        const next = (room.get(userId) ?? 0) + 1;
-        room.set(userId, next);
-        return next;
+        let entry = room.get(userId);
+        if (!entry) {
+            entry = { connectionCount: 0, lastHeartbeat: Date.now() };
+            room.set(userId, entry);
+        }
+        return entry;
+    }
+    connect(roomId, userId) {
+        const entry = this.getOrCreate(roomId, userId);
+        entry.connectionCount += 1;
+        entry.lastHeartbeat = Date.now();
+        return entry.connectionCount;
     }
     disconnect(roomId, userId) {
         const room = this.state.get(roomId);
         if (!room)
             return 0;
-        const prev = room.get(userId) ?? 0;
-        if (prev <= 1) {
+        const entry = room.get(userId);
+        if (!entry)
+            return 0;
+        entry.connectionCount -= 1;
+        if (entry.connectionCount <= 0) {
             room.delete(userId);
             if (room.size === 0)
                 this.state.delete(roomId);
             return 0;
         }
-        const next = prev - 1;
-        room.set(userId, next);
-        return next;
+        return entry.connectionCount;
+    }
+    heartbeat(roomId, userId) {
+        const room = this.state.get(roomId);
+        if (!room)
+            return;
+        const entry = room.get(userId);
+        if (!entry)
+            return;
+        entry.lastHeartbeat = Date.now();
     }
     disconnectAll(userId) {
         const affected = [];
@@ -55,20 +93,49 @@ class InMemoryPresenceStore {
         return affected;
     }
     isOnline(roomId, userId) {
-        return (this.state.get(roomId)?.get(userId) ?? 0) > 0;
+        const entry = this.state.get(roomId)?.get(userId);
+        if (!entry || entry.connectionCount <= 0)
+            return false;
+        return Date.now() - entry.lastHeartbeat < HEARTBEAT_DRIFT_MS;
     }
     count(roomId, userId) {
-        return this.state.get(roomId)?.get(userId) ?? 0;
+        return this.state.get(roomId)?.get(userId)?.connectionCount ?? 0;
     }
     onlineUsers(roomId) {
-        return new Set(this.state.get(roomId)?.keys() ?? []);
+        const now = Date.now();
+        const room = this.state.get(roomId);
+        if (!room)
+            return new Set();
+        const online = new Set();
+        for (const [userId, entry] of room) {
+            if (entry.connectionCount > 0 && now - entry.lastHeartbeat < HEARTBEAT_DRIFT_MS) {
+                online.add(userId);
+            }
+        }
+        return online;
+    }
+    evictStale() {
+        const now = Date.now();
+        const evicted = [];
+        for (const [roomId, room] of this.state) {
+            for (const [userId, entry] of room) {
+                if (now - entry.lastHeartbeat >= HEARTBEAT_DRIFT_MS) {
+                    room.delete(userId);
+                    evicted.push({ roomId, userId });
+                }
+            }
+            if (room.size === 0) {
+                this.state.delete(roomId);
+            }
+        }
+        return evicted;
     }
     snapshot() {
         const out = {};
         for (const [roomId, room] of this.state) {
             const inner = {};
-            for (const [userId, count] of room)
-                inner[userId] = count;
+            for (const [userId, entry] of room)
+                inner[userId] = entry.connectionCount;
             out[roomId] = inner;
         }
         return out;

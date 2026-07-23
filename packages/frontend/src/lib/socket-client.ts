@@ -4,7 +4,10 @@ import { io, Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
 let activeRoomId: string | null = null;
+let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const ACK_TIMEOUT_MS = 7_000;
+export { ACK_TIMEOUT_MS };
+const HEARTBEAT_INTERVAL_MS = 30_000;
 
 export interface ReplyToPayload {
   messageId: string;
@@ -39,9 +42,11 @@ export interface RealtimeRoomMessage {
   messageType?: "text" | "image" | "video" | "gif";
   replyTo?: ReplyToPayload | null;
   editedAt?: string | null;
+  editCount?: number;
   createdAt: string;
   senderName?: string | null;
   senderUserIndex?: number | null;
+  senderPfp?: string | null;
   clientMessageId?: string;       // present in ACK only; absent in broadcasts
 }
 
@@ -78,6 +83,26 @@ export function onSocketReconnect(handler: ReconnectHandler): () => void {
   return () => reconnectHandlers.delete(handler);
 }
 
+export function startHeartbeat(): void {
+  if (heartbeatInterval) return;
+  heartbeatInterval = setInterval(() => {
+    if (socket?.connected && activeRoomId) {
+      socket.emit("heartbeat", { roomId: activeRoomId });
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+export function stopHeartbeat(): void {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
+export function getActiveRoomId(): string | null {
+  return activeRoomId;
+}
+
 export async function connectToRoom(roomId: string): Promise<Socket> {
   const res = await fetch("/api/ws/ticket", {
     method: "POST",
@@ -107,12 +132,12 @@ export async function connectToRoom(roomId: string): Promise<Socket> {
     transports: ["websocket"],
     reconnection: true,
     reconnectionAttempts: 10,
+    reconnectionDelay: 1_000,
+    reconnectionDelayMax: 21_000,
+    randomizationFactor: 0.2,
   });
 
   socket.io.on("reconnect", () => {
-    if (activeRoomId) {
-      socket?.emit("join_room", { roomId: activeRoomId });
-    }
     reconnectHandlers.forEach((handler) => handler());
   });
 
@@ -202,6 +227,12 @@ export function disconnectSocket(): void {
   socket?.disconnect();
   socket = null;
   activeRoomId = null;
+}
+
+/** Called by ReconnectionManager to register a freshly created socket. */
+export function setSocket(s: Socket): void {
+  socket?.disconnect();
+  socket = s;
 }
 
 function emitWithAck<T>(event: string, payload: unknown): Promise<T> {

@@ -6,6 +6,8 @@ import type { MediaMetadata, GifMetadata, ReplyToInfo } from "@/lib/models";
 import { MediaMessage } from "./media-message";
 import { decryptReplyPreview } from "@/lib/quoted-message";
 import { getRoomKeyVersion } from "@/lib/crypto";
+import { formatDistanceToNowStrict } from "date-fns";
+import { Avatar } from "./avatar";
 
 export interface UiMessage {
   id: string;
@@ -15,12 +17,14 @@ export interface UiMessage {
   isOwn?: boolean;
   senderName?: string | null;
   senderUserIndex?: number | null;
+  senderPfp?: string | null;
   messageType?: "text" | "image" | "video" | "gif";
   mediaMetadata?: MediaMetadata;
   gifMetadata?: GifMetadata;
   // ── Reply / Edit ──────────────────────────────────────────────────
   replyTo?: ReplyToInfo | null;
   editedAt?: string | null;
+  editCount?: number;
   // ── Outbox / Optimistic State ─────────────────────────────────────
   status?: "pending" | "retrying" | "failed";
   clientMessageId?: string;
@@ -89,6 +93,14 @@ export function MessageBubble({
 
   // Decrypt reply preview once
   const [replyPreview, setReplyPreview] = useState<string | null>(null);
+
+  // Auto-refresh edited timestamp every 30s
+  const [editedTs, setEditedTs] = useState(0);
+  useEffect(() => {
+    if (!message.editedAt) return;
+    const id = setInterval(() => setEditedTs((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, [message.editedAt]);
   useEffect(() => {
     if (!message.replyTo) return;
 
@@ -279,8 +291,13 @@ export function MessageBubble({
     <div
       id={`msg-${message.id}`}
       ref={touchRootRef}
-      className={`flex select-none ${isOwn ? "justify-end" : "justify-start"}`}
+      className={`flex select-none ${isOwn ? "justify-end" : "justify-start"} gap-2`}
     >
+      {/* Avatar for received messages only */}
+      {!isOwn && (
+        <Avatar pfp={message.senderPfp} size={28} className="self-end mb-0.5" />
+      )}
+
       <div
         className={`max-w-[85%] sm:max-w-[70%] ${
           isOwn ? "items-end" : "items-start"
@@ -351,13 +368,13 @@ export function MessageBubble({
                 className="mb-1.5 flex w-full cursor-pointer border-l-2 border-neutral-700 bg-neutral-800/50 pl-2 pr-1 pt-1 pb-0.5 text-left hover:bg-neutral-800 transition-colors"
               >
                 <div className="min-w-0">
-                  <span className="block text-[11px] font-medium text-neutral-300">
+                  <span className="block truncate text-[11px] font-medium text-neutral-300">
                     {message.replyTo.senderName}
                     {message.replyTo.senderUserIndex != null
                       ? ` #${message.replyTo.senderUserIndex}`
                       : ""}
                   </span>
-                  <span className="block truncate text-[11px] text-neutral-500">
+                  <span className="block line-clamp-1 break-all text-[11px] text-neutral-500">
                     {replyPreview ?? "..."}
                   </span>
                 </div>
@@ -421,7 +438,12 @@ export function MessageBubble({
               {formatTime(message.createdAt)}
 
               {message.editedAt && (
-                <span className="text-[9px] italic text-neutral-500">edited</span>
+                <span className="text-[9px] italic text-neutral-500">
+                  edited{" "}
+                  {formatDistanceToNowStrict(new Date(message.editedAt), {
+                    addSuffix: true,
+                  })}
+                </span>
               )}
 
               {/* Outbox status indicators (isOwn only) */}

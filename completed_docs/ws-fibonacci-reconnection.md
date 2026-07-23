@@ -39,10 +39,15 @@ Augment the existing Socket.IO reconnection with a Fibonacci-delay backoff layer
 
 Fibonacci backoff logic + Socket.IO augmentation.
 
-**Fibonacci sequence:** `[1, 1, 2, 3, 5, 8, 13, 21, 34]` seconds, capped at 34s.
-- Each value gets ±20% jitter to avoid thundering herd.
-- Sequence resets after a successful connection.
-- Adds `reconnectionDelay` and `reconnectionDelayMax` to Socket.IO's Manager opts — this shadows the default exponential backoff with our Fibonacci. Socket.IO still handles the transport-level reconnect loop, but with our delay curve.
+**Fibonacci sequence (two tiers):**
+
+- **Tier 1 — Socket.IO internal (8 terms):** `[1, 1, 2, 3, 5, 8, 13, 21]` seconds, capped at 21s. These are applied to Socket.IO's `reconnectionDelay` / `reconnectionDelayMax`. Socket.IO runs its own 10-attempt loop with these delays. The 21s cap keeps this phase tight since Socket.IO is best-effort and usually works quickly if the network blip is brief.
+
+- **Tier 2 — ReconnectionManager fallback (unbounded growth):** Once Socket.IO exhausts its 10 attempts and emits `reconnect_failed`, the `ReconnectionManager` takes over. It continues the Fibonacci sequence from where Socket.IO left off: `[34, 55, 89, 144, 233, 377, 610]` seconds, **capped at 610s (≈10 minutes).** Every 3rd attempt fetches a fresh WS ticket. This ensures the app doesn't hammer the server while backgrounded for hours. The cap at ~10 minutes is a practical ceiling — beyond that, polling every 10 minutes is reasonable for a long-idle backgrounded app.
+
+- Each delay gets ±20% jitter to avoid thundering herd.
+- The sequence index carries across both tiers — it doesn't start over when the fallback takes over.
+- Sequence resets to index 0 after ANY successful connection.
 
 **Exported API:**
 
@@ -61,28 +66,32 @@ export class ReconnectionManager {
    - On `reconnect` (success): calls `onReconnected` callback, resets Fibonacci index
    - On `reconnect_failed` (Socket.IO exhausted all 10 attempts): takes over with Fibonacci-based retries — creates new `io()` connection with fresh ticket every Nth attempt (every 3 fib steps) to handle ticket expiry
 2. `forceReconnect()` — if socket is disconnected:
-   - Optionally disconnects the current socket to force a clean slate
-   - Fetches a fresh ticket via `POST /api/ws/ticket`
-   - Creates a new `io()` connection
-   - Restarts the Fibonacci sequence from index 0
+   - **Immediately cancels any in-flight fallback timer** (clears the `setTimeout` / `setInterval` that was waiting for the next Fibonacci step).
+   - Disconnects the current socket to force a clean slate.
+   - Fetches a fresh ticket via `POST /api/ws/ticket`.
+   - Creates a new `io()` connection.
+   - Restarts the Fibonacci sequence from index 0.
 3. When reconnection succeeds, calls `onReconnected`
 4. When the socket is intentionally disconnected (user leaves room), the manager stops
 
 **Socket.IO Manager options override:**
 
 ```ts
+// Tier 1: Socket.IO internal (fib 0–7 = up to 21s)
 socket = io(wsUrl, {
   auth: { ticket },
   transports: ["websocket"],
   reconnection: true,
   reconnectionAttempts: 10,
   reconnectionDelay: fib(0) * 1000,         // 1000ms
-  reconnectionDelayMax: fib(8) * 1000,      // 34000ms  
+  reconnectionDelayMax: fib(7) * 1000,      // 21000ms
   randomizationFactor: 0.2,                  // ±20% jitter
 });
 ```
 
-Socket.IO's internal backoff will approximate Fibonacci since `reconnectionDelay` starts at 1s and doubles-ish (via the randomization factor) until hitting the 34s cap.
+Socket.IO's internal backoff will approximate Fibonacci since `reconnectionDelay` starts at 1s with the randomization factor, climbing toward the 21s cap.
+
+**Tier 2 fallback:** When `reconnect_failed` fires, `ReconnectionManager` takes over. It maintains a `fibIndex` (starting at 8 — continuing from where Socket.IO left off), computes `fib(fibIndex)` on each attempt, and spawns a new `io()` if the current socket is dead. Delays proceed: 34s, 55s, 89s, 144s, 233s, 377s, 610s, 610s, 610s... Every 3rd attempt fetches a fresh WS ticket. The fallback loop uses `setTimeout` — when `forceReconnect()` is called, this timer is cleared immediately.
 
 ---
 
@@ -101,11 +110,11 @@ export class AppLifecycle {
 ```
 
 **Detects:**
-- `document.addEventListener("visibilitychange", ...)` — when `document.visibilityState === "visible"`, trigger `onForeground`
-- `window.addEventListener("online", ...)` — trigger `onForeground` when network returns
+- `document.addEventListener("visibilitychange", ...)` — when `document.visibilityState === "visible"`, checks `socket?.connected`. If disconnected, calls `onForeground`. If connected, skips (nothing to do).
+- `window.addEventListener("online", ...)` — same check: trigger `onForeground` only if socket is disconnected
 - `window.addEventListener("offline", ...)` — log only (no action needed)
 - Skips duplicate triggers within a 500ms debounce window
-- On foreground: checks `socket?.connected` — if disconnected, calls the callback
+- `onForeground` → calls `reconnectionManager.forceReconnect()`, which immediately kills the fallback timer, fetches a fresh ticket, and connects
 
 ---
 
@@ -191,11 +200,13 @@ App goes to background (OS sleep / tab switch) →
 
 App stays backgrounded, Socket.IO exhausts 10 attempts →
   reconnectionManager detects "reconnect_failed" →
-    Enters poll loop: every Nth Fibonacci step, fetch fresh ticket + new io()
+    Enters Tier 2 fallback: poll loop with Fibonacci [34s, 55s, 89s, 144s, 233s, 377s, 610s, 610s...]
+    Every 3rd attempt: fetch fresh ticket + new io()
 
 User returns / foregrounds app →
   lifecycle detects visibilitychange / online event →
     Calls reconnectionManager.forceReconnect() →
+      **Immediately clears any in-flight Fibonacci fallback timer**
       Fetches fresh ticket, creates new io() →
         On "reconnect": calls onReconnected callback →
           runSync() to get missed messages

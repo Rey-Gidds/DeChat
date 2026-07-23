@@ -2,7 +2,7 @@ import { decryptMessage, encryptMessage } from "./crypto";
 import type { ReplyToInfo } from "./models";
 
 /**
- * Encrypts a preview snippet (up to 80 chars) for embedding in a replyTo subdocument.
+ * Encrypts a preview snippet (up to 60 chars) for embedding in a replyTo subdocument.
  * For media types, returns null fields (icon is deterministic).
  */
 export async function encryptMessagePreview(
@@ -18,7 +18,7 @@ export async function encryptMessagePreview(
     return { previewIv: null, previewCiphertext: null, previewAuthTag: null };
   }
 
-  const truncated = (text ?? "").slice(0, 80);
+  const truncated = (text ?? "").slice(0, 60);
   const encrypted = await encryptMessage(truncated, roomKey);
   return {
     previewIv: encrypted.iv,

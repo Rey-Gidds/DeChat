@@ -38,12 +38,13 @@ async function isRoomDisabled(roomId) {
 async function getSenderInfo(roomId, userId) {
     const db = await getDb();
     const [user, membership] = await Promise.all([
-        db.collection("user").findOne({ _id: new mongodb_1.ObjectId(userId) }, { projection: { name: 1, email: 1 } }),
+        db.collection("user").findOne({ _id: new mongodb_1.ObjectId(userId) }, { projection: { name: 1, email: 1, pfp: 1 } }),
         db.collection("room_memberships").findOne({ roomId: new mongodb_1.ObjectId(roomId), userId: new mongodb_1.ObjectId(userId) }, { projection: { userIndex: 1 } }),
     ]);
     return {
         name: user?.name || user?.email || null,
         userIndex: membership?.userIndex ?? null,
+        pfp: user?.pfp ?? null,
     };
 }
 async function isActiveMember(roomId, userId) {
@@ -96,7 +97,7 @@ async function fetchMessagesSince(roomId, userId, since, sinceId, limit = 100) {
     const senderIds = [...new Set(messages.map((doc) => doc.senderId.toHexString()))];
     const senderObjectIds = senderIds.map((id) => new mongodb_1.ObjectId(id));
     const [users, memberships] = await Promise.all([
-        db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1 }).toArray(),
+        db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray(),
         db.collection("room_memberships").find({ roomId: roomObjectId, userId: { $in: senderObjectIds } }).project({ userId: 1, userIndex: 1 }).toArray(),
     ]);
     const userMap = new Map(users.map((u) => [u._id.toHexString(), u]));
@@ -131,6 +132,7 @@ async function fetchMessagesSince(roomId, userId, since, sinceId, limit = 100) {
             createdAt: doc.createdAt.toISOString(),
             senderName: user?.name || user?.email || null,
             senderUserIndex: membership?.userIndex ?? null,
+            senderPfp: user?.pfp ?? null,
         };
     });
 }
@@ -175,9 +177,9 @@ async function persistEncryptedMessage(input) {
         createdAt: now.toISOString(),
     };
 }
-async function updateMessageContent(roomId, messageId, senderId, ciphertext, iv, authTag) {
+async function updateMessageContent(roomId, messageId, senderId, ciphertext, iv, authTag, editCount) {
     const db = await getDb();
-    const result = await db.collection("room_messages").updateOne({ _id: new mongodb_1.ObjectId(messageId), roomId: new mongodb_1.ObjectId(roomId), senderId: new mongodb_1.ObjectId(senderId) }, { $set: { ciphertext, iv, authTag, editedAt: new Date() } });
+    const result = await db.collection("room_messages").updateOne({ _id: new mongodb_1.ObjectId(messageId), roomId: new mongodb_1.ObjectId(roomId), senderId: new mongodb_1.ObjectId(senderId) }, { $set: { ciphertext, iv, authTag, editedAt: new Date(), editCount } });
     return result.matchedCount > 0;
 }
 async function deleteMessage(roomId, messageId, senderId) {

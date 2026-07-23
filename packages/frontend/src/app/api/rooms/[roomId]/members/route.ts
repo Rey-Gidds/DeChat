@@ -86,6 +86,7 @@ export async function GET(req: Request, context: RouteContext) {
             email: m.user.email,
             image: m.user.image,
             publicKey: m.user.publicKey,
+            pfp: m.user.pfp ?? null,
           }
         : null,
     })),

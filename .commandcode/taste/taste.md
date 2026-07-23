@@ -12,6 +12,14 @@
 
 # websocket
 - `clientMessageId` must never be broadcasted to the room; it is strictly sender-side for outbox reconciliation and optimistic UI updates. Confidence: 0.85
+- Reconnection backoff (Fibonacci or similar) must be long-tailed for backgrounded apps — capped at ~10 minutes, not tens of seconds. Short caps defeat the purpose of a background reconnection strategy. Confidence: 0.80
+- When the app returns to foreground (visibilitychange / online), any in-flight backoff timer must be immediately cancelled and a force reconnect issued — no waiting for the next tick. Confidence: 0.85
+
+# communication
+- Before starting any implementation, ask clarifying questions — even many of them. Never proceed on assumptions; always confirm ambiguous design decisions with the user first. Confidence: 0.90
+
+# documentation
+- Architecture and design documentation deliverables belong in the `completed_docs/` folder as markdown files. Confidence: 0.85
 
 # ui-interactions
 - Info/context button must be positioned beside each message bubble (not overlapping it) and open a floating popover/dialog with action options. Confidence: 0.85

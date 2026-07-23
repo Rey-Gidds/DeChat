@@ -42,6 +42,7 @@ export async function GET(req: Request, context: RouteContext) {
             name: r.user.name,
             email: r.user.email,
             publicKey: r.user.publicKey ?? null,
+            pfp: r.user.pfp ?? null,
           }
         : null,
     })),

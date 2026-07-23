@@ -37,6 +37,7 @@ function serializeMessage(doc: Record<string, any>) {
     createdAt: doc.createdAt.toISOString(),
     senderName: null as string | null,
     senderUserIndex: null as number | null,
+    senderPfp: null as string | null,
   };
 }
 
@@ -61,7 +62,7 @@ async function enrichMessagesWithSenders(
     db
       .collection("user")
       .find({ _id: { $in: senderObjectIds } })
-      .project({ name: 1, email: 1 })
+      .project({ name: 1, email: 1, pfp: 1 })
       .toArray(),
     db
       .collection("room_memberships")
@@ -82,6 +83,7 @@ async function enrichMessagesWithSenders(
       ...msg,
       senderName: user?.name || user?.email || null,
       senderUserIndex: membership?.userIndex ?? null,
+      senderPfp: (user?.pfp as string) ?? null,
     };
   });
 }

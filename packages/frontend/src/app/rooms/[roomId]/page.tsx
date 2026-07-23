@@ -8,14 +8,17 @@ import {
   emitTypingStart,
   emitTypingStop,
   getSocket,
-  onSocketReconnect,
   sendEncryptedMessage,
   syncSince,
   editEncryptedMessage,
   deleteEncryptedMessage,
+  startHeartbeat,
+  stopHeartbeat,
   type RealtimeRoomMessage,
   type TypingEventPayload,
 } from "@/lib/socket-client";
+import { ReconnectionManager } from "@/lib/reconnection-manager";
+import { AppLifecycle } from "@/lib/lifecycle";
 import {
   decryptMessage,
   encryptMessage,
@@ -45,6 +48,7 @@ import {
   replaceCache,
   evictLRURooms,
   removeFromCache,
+  updateInCache,
   CACHE_WINDOW_SIZE,
   MAX_CACHED_ROOMS,
 } from "@/lib/message-cache";
@@ -119,7 +123,7 @@ type RoomMember = {
   userId: string;
   role: string;
   isOnline?: boolean;
-  user: { name?: string; email?: string } | null;
+  user: { name?: string; email?: string; pfp?: string | null } | null;
 };
 
 function mergeMessages(existing: UiMessage[], incoming: UiMessage[]): UiMessage[] {
@@ -214,8 +218,10 @@ async function decryptBatch(
         isOwn: record.senderId === currentUserId,
         senderName: record.senderName ?? null,
         senderUserIndex: record.senderUserIndex ?? null,
+        senderPfp: record.senderPfp ?? null,
         replyTo,
         editedAt: record.editedAt ?? null,
+        editCount: record.editCount ?? 0,
         clientMessageId: record.clientMessageId,
       };
 
@@ -389,6 +395,8 @@ export default function RoomChatPage() {
   const [isRotating, setIsRotating] = useState(false);
   const rotationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workerRef = useRef<OutboxRetryWorker | null>(null);
+  const reconnectionRef = useRef<ReconnectionManager | null>(null);
+  const lifecycleRef = useRef<AppLifecycle | null>(null);
   const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -976,8 +984,22 @@ export default function RoomChatPage() {
 
         // Phase 4: Live WebSocket connection & retry worker
         // Perform connection asynchronously in the background so it never blocks the UI or input activation.
+        const rm = new ReconnectionManager(roomId, async () => {
+          await runSync();
+          void workerRef.current?.flushImmediate();
+        });
+        const lifecycle = new AppLifecycle(() => rm.forceReconnect());
+        reconnectionRef.current = rm;
+        lifecycleRef.current = lifecycle;
+
         connectToRoom(roomId).then(async (socket) => {
           if (!mounted) return;
+
+          rm.start(socket);
+          lifecycle.start();
+
+          // Start heartbeat to keep presence accurate
+          startHeartbeat();
 
           // Start outbox retry worker
           const transmit = async (entry: OutboxEntry): Promise<"sent" | "failed" | "retry"> => {
@@ -1095,6 +1117,7 @@ export default function RoomChatPage() {
                         ...m,
                         body: body || m.body,
                         editedAt: incoming.editedAt ?? null,
+                        editCount: incoming.editCount ?? 0,
                         ciphertext: incoming.ciphertext,
                       }
                     : m
@@ -1209,19 +1232,18 @@ export default function RoomChatPage() {
 
     void bootstrap();
 
-    const offReconnect = onSocketReconnect(() => {
-      void runSync();
-      void workerRef.current?.flushImmediate();
-    });
-
     return () => {
       mounted = false;
-      offReconnect();
+      reconnectionRef.current?.stop();
+      reconnectionRef.current = null;
+      lifecycleRef.current?.stop();
+      lifecycleRef.current = null;
       workerRef.current?.stop();
       workerRef.current = null;
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (rotationTimeoutRef.current) clearTimeout(rotationTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+      stopHeartbeat();
       disconnectSocket();
       setCacheServed(false);
       setIsBootstrapping(true);
@@ -1404,10 +1426,6 @@ export default function RoomChatPage() {
       if (!originalMsg) return;
 
       // Get the key version used when the original was encrypted (V_orig)
-      // We determine this from the current room key version — the original
-      // message's version is latent in the encrypted record. For simplicity
-      // we use the current room key version; in practice the client should
-      // retrieve the exact V_orig from the persisted message.
       const roomKey = await getRoomKeyVersion(roomId, roomKeyRotation.currentKeyVersion);
       if (!roomKey) throw new Error("Room key not available");
 
@@ -1423,7 +1441,16 @@ export default function RoomChatPage() {
 
       if (!response.ok) throw new Error(response.error || "Edit failed");
 
-      // The message_edited socket event will update the local state
+      // Update working set cache immediately with ACK data
+      if (response.message) {
+        const editedAt = response.message.editedAt ?? new Date().toISOString();
+        void updateInCache(roomId, editingMessageId, {
+          ciphertext: encrypted.ciphertext,
+          iv: encrypted.iv,
+          authTag: encrypted.authTag,
+          editedAt,
+        });
+      }
     } catch (err) {
       setToast(err instanceof Error ? err.message : "Failed to edit message");
     }
@@ -2145,7 +2172,7 @@ export default function RoomChatPage() {
           isOwn={contextMenu.message.isOwn ?? false}
           canEdit={
             (contextMenu.message.isOwn ?? false) &&
-            !contextMenu.message.editedAt &&
+            (contextMenu.message.editCount ?? 0) < 2 &&
             (() => {
               const msgTime = new Date(contextMenu.message.createdAt).getTime();
               return Number.isFinite(msgTime) && Date.now() - msgTime < 15 * 60 * 1000;
