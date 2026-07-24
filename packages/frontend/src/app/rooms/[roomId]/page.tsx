@@ -397,6 +397,7 @@ export default function RoomChatPage() {
   const workerRef = useRef<OutboxRetryWorker | null>(null);
   const reconnectionRef = useRef<ReconnectionManager | null>(null);
   const lifecycleRef = useRef<AppLifecycle | null>(null);
+  const refreshMembersRef = useRef<() => void>(() => {});
   const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -987,6 +988,7 @@ export default function RoomChatPage() {
         const rm = new ReconnectionManager(roomId, async () => {
           await runSync();
           void workerRef.current?.flushImmediate();
+          refreshMembersRef.current();
         });
         const lifecycle = new AppLifecycle(() => rm.forceReconnect());
         reconnectionRef.current = rm;
@@ -1150,11 +1152,22 @@ export default function RoomChatPage() {
 
           socket.on("PRESENCE_UPDATED", (payload: { roomId: string; userId: string; isOnline: boolean }) => {
             if (payload.roomId !== roomId) return;
+            const targetUserId = String(payload.userId);
             setOnlineUserIds((prev) => {
               const next = new Set(prev);
-              if (payload.isOnline) next.add(payload.userId);
-              else next.delete(payload.userId);
+              if (payload.isOnline) next.add(targetUserId);
+              else next.delete(targetUserId);
               return next;
+            });
+            setMembers((prev) => {
+              const exists = prev.some((m) => String(m.userId) === targetUserId);
+              if (!exists && payload.isOnline) {
+                refreshMembersRef.current();
+                return prev;
+              }
+              return prev.map((m) =>
+                String(m.userId) === targetUserId ? { ...m, isOnline: payload.isOnline } : m
+              );
             });
           });
 
@@ -1199,7 +1212,7 @@ export default function RoomChatPage() {
             if (!mounted) return;
             const m = (data.members ?? []) as RoomMember[];
             setMembers(m);
-            setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => mm.userId)));
+            setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => String(mm.userId))));
           })
           .catch(() => undefined);
 
@@ -1878,10 +1891,14 @@ export default function RoomChatPage() {
       .then((data) => {
         const m = (data.members ?? []) as RoomMember[];
         setMembers(m);
-        setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => mm.userId)));
+        setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => String(mm.userId))));
       })
       .catch(() => undefined);
   }, [roomId]);
+
+  useEffect(() => {
+    refreshMembersRef.current = refreshMembers;
+  }, [refreshMembers]);
 
   // Kick a user out of the room
   const handleKickout = useCallback(async (targetUserId: string) => {
