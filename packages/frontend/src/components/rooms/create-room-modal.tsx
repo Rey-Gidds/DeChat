@@ -7,6 +7,7 @@ import { finalizeCreatorRoomKey } from "@/lib/room-membership-client";
 import { useRouter } from "next/navigation";
 import { useDebounce } from "@/hooks/use-debounce";
 import { TrendingTags } from "@/components/trending-tags";
+import { useSWRConfig } from "swr";
 
 interface CreateRoomModalProps {
   open: boolean;
@@ -151,6 +152,7 @@ export function CreateRoomModal({
   onEnsureKeys,
 }: CreateRoomModalProps) {
   const router = useRouter();
+  const { mutate: globalMutate } = useSWRConfig();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -163,15 +165,21 @@ export function CreateRoomModal({
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
     setLoading(true);
+    setError("");
 
     try {
       const res = await fetch("/api/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ name, description, tags, joinPolicy, maxMembers }),
+        body: JSON.stringify({
+          name,
+          description,
+          tags,
+          maxMembers,
+          joinPolicy,
+        }),
       });
 
       const data = await res.json();
@@ -188,6 +196,7 @@ export function CreateRoomModal({
       }
 
       await finalizeCreatorRoomKey(roomId, userId, activePublicKey);
+      void globalMutate((k) => typeof k === "string" && k.startsWith("/api/rooms"));
       onClose();
       router.push(`/rooms/${roomId}`);
     } catch (err) {

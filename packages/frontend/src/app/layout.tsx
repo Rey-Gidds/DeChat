@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css"
 import { AppShell } from "@/components/layout/app-shell";
+import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
   title: "DeChat | Privacy-First Realtime Chat",
@@ -40,7 +41,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen antialiased">
-        <AppShell>{children}</AppShell>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );

@@ -1,69 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
-import { connectAsUser } from "@/lib/socket-client";
-
-type PendingRequestRow = {
-  roomId: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | string;
-  requestedAt: string;
-  reviewedBy: string | null;
-  reviewedAt: string | null;
-  room: { id: string; name: string; isDisabled: boolean } | null;
-};
+import { usePendingRequests } from "@/hooks/use-swr-hooks";
 
 export default function PendingRequestsPage() {
   const { data: session, isPending } = useSession();
-  const [rows, setRows] = useState<PendingRequestRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/rooms/requests", { credentials: "include" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to load requests");
-      setRows((data.requests ?? []) as PendingRequestRow[]);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load requests");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isPending) return;
-    if (!session?.user) return;
-    void load();
-  }, [isPending, session, load]);
-
-  useEffect(() => {
-    if (isPending || !session?.user) return;
-    let mounted = true;
-    void connectAsUser()
-      .then((sock) => {
-        const handler = () => {
-          if (!mounted) return;
-          void load();
-        };
-        sock.on("REQUEST_APPROVED", handler);
-        sock.on("REQUEST_REJECTED", handler);
-        sock.on("membership_updated", handler);
-        return () => {
-          sock.off("REQUEST_APPROVED", handler);
-          sock.off("REQUEST_REJECTED", handler);
-          sock.off("membership_updated", handler);
-        };
-      })
-      .catch(() => undefined);
-    return () => {
-      mounted = false;
-    };
-  }, [isPending, session, load]);
+  const { requests: rows, isLoading, error: swrError } = usePendingRequests();
 
   if (isPending) {
     return (
@@ -84,6 +27,8 @@ export default function PendingRequestsPage() {
     );
   }
 
+  const error = swrError instanceof Error ? swrError.message : "";
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
@@ -99,7 +44,7 @@ export default function PendingRequestsPage() {
         </div>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <div className="border border-neutral-900 bg-neutral-950 p-6">
           <p className="text-xs uppercase tracking-wider text-neutral-600">Loading…</p>
         </div>

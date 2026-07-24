@@ -1,42 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
-import { Users } from "lucide-react";
-
-interface JoinedRoom {
-  roomId: string;
-  status: string;
-  joinedAt: string;
-  role: string;
-  room: {
-    name: string;
-    description?: string;
-    joinPolicy?: string;
-    maxMembers?: number;
-    memberCount?: number;
-    isDisabled?: boolean;
-  } | null;
-}
+import { useMyRooms } from "@/hooks/use-swr-hooks";
 
 export default function JoinedRoomsPage() {
   const { data: session, isPending } = useSession();
-  const [rooms, setRooms] = useState<JoinedRoom[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (isPending || !session?.user) return;
-    setLoading(true);
-    fetch("/api/rooms/mine?status=APPROVED", { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        setRooms(data.memberships ?? []);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [isPending, session]);
+  const { memberships: rooms, isLoading, error: swrError } = useMyRooms("APPROVED");
 
   if (isPending) {
     return (
@@ -55,6 +25,8 @@ export default function JoinedRoomsPage() {
     );
   }
 
+  const error = swrError instanceof Error ? swrError.message : "";
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
@@ -66,7 +38,7 @@ export default function JoinedRoomsPage() {
         <div className="mb-4 border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">{error}</div>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <div className="border border-neutral-900 bg-neutral-950 p-6">
           <p className="text-xs uppercase tracking-wider text-neutral-600">Loading…</p>
         </div>

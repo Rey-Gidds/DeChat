@@ -1,61 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-
-interface MyRoom {
-  roomId: string;
-  status: string;
-  role: string;
-  room: {
-    _id?: string;
-    id?: string;
-    name: string;
-    isDisabled?: boolean;
-    maxMembers?: number;
-    memberCount?: number;
-  } | null;
-}
+import { useMyRooms } from "@/hooks/use-swr-hooks";
 
 export default function MyRoomsPage() {
   const { data: session, isPending } = useSession();
-  const [rooms, setRooms] = useState<MyRoom[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { ownedRooms, isLoading, error: swrError, toggleRoomDisable } = useMyRooms("APPROVED");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/rooms/mine?status=APPROVED", { credentials: "include" });
-      const data = await res.json();
-      const owned = (data.memberships ?? []).filter((m: MyRoom) => m.role === "OWNER");
-      setRooms(owned);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isPending || !session?.user) return;
-    void load();
-  }, [isPending, session, load]);
-
-  async function handleToggleDisable(roomId: string) {
+  async function handleToggleDisable(e: React.MouseEvent, roomId: string) {
+    e.preventDefault();
+    e.stopPropagation();
     setTogglingId(roomId);
+    setActionError("");
     try {
-      const res = await fetch(`/api/rooms/${roomId}/disable`, {
-        method: "PATCH",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed");
-      await load();
+      await toggleRoomDisable(roomId);
     } catch {
-      setError("Failed to toggle room state");
+      setActionError("Failed to toggle room state");
     } finally {
       setTogglingId(null);
     }
@@ -78,6 +43,8 @@ export default function MyRoomsPage() {
     );
   }
 
+  const displayError = actionError || (swrError instanceof Error ? swrError.message : "");
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
@@ -85,22 +52,22 @@ export default function MyRoomsPage() {
         <p className="mt-2 text-sm text-neutral-500">Manage rooms you own — disable, restore, or adjust settings.</p>
       </div>
 
-      {error && (
-        <div className="mb-4 border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">{error}</div>
+      {displayError && (
+        <div className="mb-4 border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">{displayError}</div>
       )}
 
-      {loading ? (
+      {isLoading ? (
         <div className="border border-neutral-900 bg-neutral-950 p-6">
           <p className="text-xs uppercase tracking-wider text-neutral-600">Loading…</p>
         </div>
-      ) : rooms.length === 0 ? (
+      ) : ownedRooms.length === 0 ? (
         <div className="border border-dashed border-neutral-800 px-6 py-16 text-center">
           <p className="text-sm text-neutral-500">You don&apos;t own any rooms yet.</p>
           <Link href="/" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">Create one</Link>
         </div>
       ) : (
         <div className="space-y-4">
-          {rooms.map((r) => {
+          {ownedRooms.map((r) => {
             const roomId = r.roomId;
             const isDisabled = Boolean(r.room?.isDisabled);
             return (
@@ -125,7 +92,7 @@ export default function MyRoomsPage() {
                         variant={isDisabled ? "primary" : "ghost"}
                         size="sm"
                         disabled={togglingId === roomId}
-                        onClick={() => void handleToggleDisable(roomId)}
+                        onClick={(e) => void handleToggleDisable(e, roomId)}
                         className={`text-[10px] ${isDisabled ? "" : "border border-red-500/30 text-red-400 hover:border-red-500/60"}`}
                       >
                         {togglingId === roomId ? "..." : isDisabled ? "Restore" : "Disable"}

@@ -9,6 +9,7 @@ import { RecoveryDownload } from "@/components/key-recovery/recovery-download";
 import { getPrivateKey } from "@/lib/crypto";
 import Link from "next/link";
 import { format } from "date-fns";
+import { useUser, useMyRooms } from "@/hooks/use-swr-hooks";
 
 interface UserProfile {
   id: string;
@@ -37,10 +38,11 @@ export default function ProfilePage() {
   const router = useRouter();
   const { openRecovery, hasPrivateKey } = useKeyHealth();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [memberships, setMemberships] = useState<RoomMembership[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { user: profile, isLoading: userLoading, error: userError, updateProfileName, mutateUser } = useUser();
+  const { memberships, isLoading: roomsLoading } = useMyRooms();
+  
+  const loading = userLoading || roomsLoading;
+  const error = userError instanceof Error ? userError.message : "";
 
   // Name editing state
   const [editingName, setEditingName] = useState(false);
@@ -57,39 +59,9 @@ export default function ProfilePage() {
   const [recoveryPrivateKey, setRecoveryPrivateKey] = useState<CryptoKey | null>(null);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [profileRes, roomsRes] = await Promise.all([
-        fetch("/api/me", { credentials: "include" }),
-        fetch("/api/rooms/mine", { credentials: "include" }),
-      ]);
-
-      const profileData = await profileRes.json();
-      const roomsData = await roomsRes.json();
-
-      if (!profileRes.ok) throw new Error(profileData.error || "Failed to load profile");
-      
-      setProfile({
-        ...profileData,
-        pfp: profileData.pfp ?? null,
-      });
-      setNameDraft(profileData.name || "");
-      setMemberships(roomsData.memberships || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load profile data");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
   function handleStartEditName() {
     if (!profile) return;
-    setNameDraft(profile.name);
+    setNameDraft(profile.name || "");
     setNameError("");
     setEditingName(true);
   }
@@ -112,15 +84,7 @@ export default function ProfilePage() {
     setSavingName(true);
     setNameError("");
     try {
-      const res = await fetch("/api/me", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name: trimmed }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update name");
-      setProfile((prev) => (prev ? { ...prev, name: data.name } : prev));
+      await updateProfileName(trimmed);
       setEditingName(false);
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "Failed to update name");
@@ -161,7 +125,7 @@ export default function ProfilePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to upload picture");
-      setProfile((prev) => (prev ? { ...prev, pfp: data.pfp } : prev));
+      await mutateUser();
     } catch (err) {
       setPfpError(err instanceof Error ? err.message : "Failed to upload picture");
     } finally {
@@ -178,7 +142,7 @@ export default function ProfilePage() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to remove picture");
-      setProfile((prev) => (prev ? { ...prev, pfp: null } : prev));
+      await mutateUser();
     } catch (err) {
       setPfpError(err instanceof Error ? err.message : "Failed to remove picture");
     } finally {
@@ -196,7 +160,7 @@ export default function ProfilePage() {
         setShowRecoveryDownload(true);
       }
     } catch {
-      setError("Failed to load private key.");
+      userError("Failed to load private key.");
     } finally {
       setRecoveryLoading(false);
     }

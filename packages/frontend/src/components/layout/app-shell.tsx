@@ -11,6 +11,7 @@ import { KeyStatusBanner } from "@/components/key-recovery/key-status-banner";
 import { RecoveryDialog } from "@/components/key-recovery/recovery-dialog";
 import { KeygenDialog } from "@/components/key-recovery/keygen-dialog";
 import { Compass, Clock, List, Grid3X3, User } from "lucide-react";
+import { useUser } from "@/hooks/use-swr-hooks";
 
 const NAV_ITEMS = [
   { href: "/rooms/joined", label: "Joined", icon: List },
@@ -28,10 +29,12 @@ function GlobalRecoveryDialog() {
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session, isPending } = useSession();
+  const { user: userProfile } = useUser();
   const isAuthPage = ["/sign-in", "/sign-up", "/verify-email", "/forgot-password", "/reset-password"].includes(pathname);
   const isRoomPage = (pathname.startsWith("/rooms/") && !pathname.startsWith("/rooms/joined") && !pathname.startsWith("/my-rooms")) || isAuthPage;
 
   const showKeygen = session?.user && !isPending && !isAuthPage && !(session.user as any).encryptionEnabled;
+  const userName = userProfile?.name || session?.user?.name || session?.user?.email;
 
   return (
     <div className="flex h-screen flex-col overflow-x-hidden bg-black text-neutral-200">
@@ -95,7 +98,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
               {!isPending && session?.user ? (
                 <>
                   <span className="hidden max-w-[140px] truncate text-xs text-neutral-500 md:inline">
-                    {session.user.name || session.user.email}
+                    {userName}
                   </span>
                   <Link href="/profile" className="hidden sm:inline">
                     <Button variant="ghost" size="sm" className="text-xs uppercase tracking-wider">
