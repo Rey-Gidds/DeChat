@@ -24,8 +24,14 @@ export interface PresenceStore {
   /** Update the heartbeat timestamp for a user in a specific room. */
   heartbeat(roomId: string, userId: string): void;
 
+  /** Update global heartbeat timestamp for a user (always-online signal). */
+  globalHeartbeat(userId: string): void;
+
   /** True when the user has at least one active connection and heartbeat is not stale. */
   isOnline(roomId: string, userId: string): boolean;
+
+  /** True when the user has at least one global connection. */
+  isGloballyOnline(userId: string): boolean;
 
   /** Current connection count for a user in a room (0 if absent). */
   count(roomId: string, userId: string): number;
@@ -38,6 +44,20 @@ export interface PresenceStore {
 
   /** Scan and evict users whose heartbeat has exceeded the drift threshold. Returns the list of {roomId, userId} that became offline. */
   evictStale(): Array<{ roomId: string; userId: string }>;
+
+  // ── Viewing presence (Phase 4) ─────────────────────────────
+
+  /** Mark a user as actively viewing a room (room page open). */
+  viewingConnect(roomId: string, userId: string): void;
+
+  /** Mark a user as no longer viewing a room (navigated away). */
+  viewingDisconnect(roomId: string, userId: string): void;
+
+  /** Refresh the viewing heartbeat for a user in a room. */
+  viewingHeartbeat(roomId: string, userId: string): void;
+
+  /** Set of userIds actively viewing this room. */
+  viewingUsers(roomId: string): Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +72,10 @@ interface PresenceEntry {
 export class InMemoryPresenceStore implements PresenceStore {
   /** roomId → userId → { connectionCount, lastHeartbeat } */
   private readonly state = new Map<string, Map<string, PresenceEntry>>();
+  /** userId → lastHeartbeat (global socket presence) */
+  private readonly globalState = new Map<string, number>();
+  /** roomId → userId → lastHeartbeat (viewing presence) */
+  private readonly viewingState = new Map<string, Map<string, number>>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Start periodic heartbeat eviction. Call once when the server starts. */
@@ -119,6 +143,10 @@ export class InMemoryPresenceStore implements PresenceStore {
     entry.lastHeartbeat = Date.now();
   }
 
+  globalHeartbeat(userId: string): void {
+    this.globalState.set(userId, Date.now());
+  }
+
   disconnectAll(userId: string): string[] {
     const affected: string[] = [];
     for (const [roomId, room] of this.state) {
@@ -137,6 +165,12 @@ export class InMemoryPresenceStore implements PresenceStore {
     const entry = this.state.get(roomId)?.get(userId);
     if (!entry || entry.connectionCount <= 0) return false;
     return Date.now() - entry.lastHeartbeat < HEARTBEAT_DRIFT_MS;
+  }
+
+  isGloballyOnline(userId: string): boolean {
+    const lastHb = this.globalState.get(userId);
+    if (!lastHb) return false;
+    return Date.now() - lastHb < HEARTBEAT_DRIFT_MS;
   }
 
   count(roomId: string, userId: string): number {
@@ -181,5 +215,40 @@ export class InMemoryPresenceStore implements PresenceStore {
       out[roomId] = inner;
     }
     return out;
+  }
+
+  // ── Viewing presence (Phase 4) ─────────────────────────────
+
+  viewingConnect(roomId: string, userId: string): void {
+    let room = this.viewingState.get(roomId);
+    if (!room) {
+      room = new Map();
+      this.viewingState.set(roomId, room);
+    }
+    room.set(userId, Date.now());
+  }
+
+  viewingDisconnect(roomId: string, userId: string): void {
+    const room = this.viewingState.get(roomId);
+    if (!room) return;
+    room.delete(userId);
+    if (room.size === 0) this.viewingState.delete(roomId);
+  }
+
+  viewingHeartbeat(roomId: string, userId: string): void {
+    const room = this.viewingState.get(roomId);
+    if (!room) return;
+    room.set(userId, Date.now());
+  }
+
+  viewingUsers(roomId: string): Set<string> {
+    const now = Date.now();
+    const room = this.viewingState.get(roomId);
+    if (!room) return new Set();
+    const viewers = new Set<string>();
+    for (const [userId, lastHb] of room) {
+      if (now - lastHb < HEARTBEAT_DRIFT_MS) viewers.add(userId);
+    }
+    return viewers;
   }
 }

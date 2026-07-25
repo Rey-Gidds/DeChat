@@ -232,3 +232,24 @@ export async function evictOldestFailedEntries(
     req.onerror = () => reject(req.error);
   });
 }
+
+/** All retry-eligible entries across ALL rooms (global outbox worker). */
+export async function getAllEligibleRetryEntries(
+  now: number
+): Promise<OutboxEntry[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OUTBOX_STORE, "readonly");
+    const store = tx.objectStore(OUTBOX_STORE);
+    const index = store.index("by-next-retry");
+    const range = IDBKeyRange.upperBound(now);
+    const req = index.getAll(range);
+    req.onsuccess = () => {
+      const entries = (req.result as OutboxEntry[]).filter(
+        (e) => e.status !== "FAILED"
+      );
+      resolve(entries);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}

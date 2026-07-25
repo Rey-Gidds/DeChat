@@ -260,3 +260,43 @@ export async function deleteMessage(
   );
   return result.deletedCount > 0;
 }
+
+/** Returns all approved (non-blocked) membership roomIds for a user. */
+export async function getApprovedMemberships(userId: string): Promise<string[]> {
+  const db = await getDb();
+  const docs = await db.collection("room_memberships").find(
+    { userId: new ObjectId(userId), status: "APPROVED", isBlocked: false },
+    { projection: { roomId: 1 } }
+  ).toArray();
+  return docs.map((d) => (d.roomId as ObjectId).toHexString());
+}
+
+export interface RoomMetadata {
+  roomId: string;
+  latestMessageId: string | null;
+  latestMessageCreatedAt: string | null;
+  roomName: string;
+  memberCount: number;
+  isDisabled: boolean;
+}
+
+export async function getRoomsMetadata(
+  roomIds: string[]
+): Promise<RoomMetadata[]> {
+  if (roomIds.length === 0) return [];
+  const db = await getDb();
+  const objectIds = roomIds.map((id) => new ObjectId(id));
+  const rooms = await db.collection("rooms").find(
+    { _id: { $in: objectIds } },
+    { projection: { name: 1, latestMessageId: 1, latestMessageCreatedAt: 1, memberCount: 1, isDisabled: 1 } }
+  ).toArray();
+
+  return rooms.map((r: any) => ({
+    roomId: r._id.toHexString(),
+    latestMessageId: r.latestMessageId ?? null,
+    latestMessageCreatedAt: r.latestMessageCreatedAt instanceof Date ? r.latestMessageCreatedAt.toISOString() : null,
+    roomName: r.name ?? "Unnamed Room",
+    memberCount: r.memberCount ?? 0,
+    isDisabled: Boolean(r.isDisabled),
+  }));
+}

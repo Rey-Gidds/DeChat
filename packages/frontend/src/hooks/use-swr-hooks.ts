@@ -3,7 +3,11 @@
 import useSWR, { useSWRConfig } from "swr";
 import { useEffect } from "react";
 import { SWR_KEYS } from "@/lib/swr-config";
-import { connectAsUser } from "@/lib/socket-client";
+import {
+  connectAsUser,
+  USE_GLOBAL_SOCKET,
+  getGlobalSocket,
+} from "@/lib/socket-client";
 
 export interface UserProfileData {
   id: string;
@@ -28,7 +32,9 @@ export interface MyRoomItem {
     isDisabled?: boolean;
     maxMembers?: number;
     memberCount?: number;
+    onlineCount?: number;
   } | null;
+
 }
 
 export interface PendingRequestItem {
@@ -158,6 +164,28 @@ export function usePendingRequests() {
 
   useEffect(() => {
     let mounted = true;
+
+    if (USE_GLOBAL_SOCKET) {
+      // Use the global socket — already connected by GlobalSocketProvider
+      const s = getGlobalSocket();
+      if (!s) return;
+
+      const handleUpdate = () => {
+        if (mounted) void mutate();
+      };
+
+      s.on("REQUEST_APPROVED", handleUpdate);
+      s.on("REQUEST_REJECTED", handleUpdate);
+      s.on("membership_updated", handleUpdate);
+
+      return () => {
+        s.off("REQUEST_APPROVED", handleUpdate);
+        s.off("REQUEST_REJECTED", handleUpdate);
+        s.off("membership_updated", handleUpdate);
+      };
+    }
+
+    // Legacy per-room path
     connectAsUser()
       .then((socket) => {
         const handleUpdate = () => {

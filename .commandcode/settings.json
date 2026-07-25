@@ -3,7 +3,14 @@
     "allow": [
       "Shell(npx tsc --noEmit 2 >& 1)",
       "Shell(npx tsc 2 >& 1)",
-      "Shell(npx next build --no-lint 2 >& 1)"
+      "Shell(npx next build --no-lint 2 >& 1)",
+      "powershell",
+      "Shell(dir node_modules\\@types\\nodemailer 2>nul && echo \"INSTALLED\" || echo \"NOT INSTALLED\")",
+      "Shell(if:*)",
+      "Shell(else:*)",
+      "Shell(npm:*)",
+      "Shell(dir node_modules\\@types\\nodemailer 2>nul && echo \"FRONTEND\" || echo \"NOT_IN_FRONTEND\")",
+      "Shell(dir /s /b @types\\nodemailer 2>nul | findstr /i \"nodemailer\")"
     ],
     "deny": [],
     "defaultMode": "default"

@@ -12,6 +12,7 @@ import { RecoveryDialog } from "@/components/key-recovery/recovery-dialog";
 import { KeygenDialog } from "@/components/key-recovery/keygen-dialog";
 import { Compass, Clock, List, Grid3X3, User } from "lucide-react";
 import { useUser } from "@/hooks/use-swr-hooks";
+import { GlobalSocketProvider } from "@/lib/global-socket-context";
 
 const NAV_ITEMS = [
   { href: "/rooms/joined", label: "Joined", icon: List },
@@ -129,7 +130,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </header>
       )}
 
-      <main className={`flex-1 min-h-0 ${isRoomPage ? "" : "overflow-y-auto pb-20 sm:pb-0"}`}>{children}</main>
+      <main className={`flex-1 min-h-0 ${isRoomPage ? "" : "overflow-y-auto pb-20 sm:pb-0"}`}>
+        <GlobalSocketProvider>{children}</GlobalSocketProvider>
+      </main>
 
       {/* Mobile footer nav */}
       {!isRoomPage && session?.user && (

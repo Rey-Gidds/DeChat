@@ -18,7 +18,11 @@ type RouteContext = {
   params: Promise<{ roomId: string; userId: string }>;
 };
 
-async function notifyMembershipUpdate(userId: string, roomId: string, status: string) {
+async function notifyMembershipUpdate(
+  userId: string,
+  roomId: string,
+  payload: Record<string, unknown>
+) {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
   const secret =
     process.env.INTERNAL_WS_SECRET ||
@@ -32,7 +36,7 @@ async function notifyMembershipUpdate(userId: string, roomId: string, status: st
       "Content-Type": "application/json",
       "x-internal-secret": secret,
     },
-    body: JSON.stringify({ userId, roomId, status }),
+    body: JSON.stringify({ userId, roomId, ...payload }),
   }).catch((err) => {
     console.error("[membership-updated] Failed to notify websocket server:", err);
   });
@@ -222,7 +226,9 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   if (rejectedDueToCapacity) {
-    await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), "REJECTED");
+    await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), {
+      status: "REJECTED",
+    });
     return NextResponse.json(
       { error: "This room has reached its member limit." },
       { status: 409 }
@@ -233,10 +239,27 @@ export async function POST(req: Request, context: RouteContext) {
     return NextResponse.json({ error: "Approval failed" }, { status: 500 });
   }
 
-  await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), "APPROVED");
-
   const updated = await getMembership(roomId, targetUserId);
   if (!updated) return NextResponse.json({ error: "Membership lost" }, { status: 500 });
+
+  // Fetch user info and room info for full notification payload
+  const [approvedUser, roomInfo] = await Promise.all([
+    db.collection("user").findOne({ _id: targetUserId }, { projection: { name: 1, email: 1, pfp: 1 } }),
+    db.collection("rooms").findOne({ _id: roomId }, { projection: { name: 1 } }),
+  ]);
+  const currentCount = await db.collection("room_memberships").countDocuments({
+    roomId, status: "APPROVED", isBlocked: false,
+  });
+
+  await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), {
+    status: "APPROVED",
+    role: "MEMBER",
+    userIndex: (updated as any)?.userIndex ?? null,
+    userName: approvedUser?.name || approvedUser?.email || "",
+    userPfp: (approvedUser?.pfp as string) ?? null,
+    roomName: roomInfo?.name ?? "",
+    memberCount: currentCount,
+  });
 
   return NextResponse.json({
     membership: {
@@ -295,7 +318,7 @@ export async function DELETE(req: Request, context: RouteContext) {
   await notifyMembershipUpdate(
     targetUserId.toString(),
     roomId.toString(),
-    "REJECTED"
+    { status: "REJECTED" }
   );
 
   return NextResponse.json({ success: true });

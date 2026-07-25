@@ -37,7 +37,9 @@ export const auth = betterAuth({
         enabled: true,
         requireEmailVerification: false,
         sendResetPassword: async ({ user, token }) => {
-            const url = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "http://localhost:3000";
+            const cleanBaseUrl = baseUrl.replace(/\/$/, "");
+            const url = `${cleanBaseUrl}/reset-password?token=${token}`;
             
             if (process.env.NODE_ENV === "development") {
                 console.log(`\n\n🔑 PASSWORD RESET LINK: ${url}\n\n`);
@@ -57,14 +59,16 @@ export const auth = betterAuth({
         google: {
             clientId: process.env.GOOGLE_CLIENT_ID || "dummy_google_client_id",
             clientSecret: process.env.GOOGLE_CLIENT_SECRET || "dummy_google_client_secret",
-            redirectURI: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/auth/callback/google`,
+            redirectURI: `${(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "")}/api/auth/callback/google`,
         }
     },
     emailVerification: {
         sendOnSignUp: true,
         autoSignInAfterVerification: true,
         sendVerificationEmail: async ({ user, token }) => {
-            const url = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${token}`;
+            const baseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.BETTER_AUTH_URL || "http://localhost:3000";
+            const cleanBaseUrl = baseUrl.replace(/\/$/, "");
+            const url = `${cleanBaseUrl}/verify-email?token=${token}`;
             
             if (process.env.NODE_ENV === "development") {
                 console.log(`\n\n📧 EMAIL VERIFICATION LINK: ${url}\n\n`);

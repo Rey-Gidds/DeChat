@@ -6,8 +6,9 @@ let verifiedOnce = false;
 function getTransporter(): nodemailer.Transporter {
     if (transporter) return transporter;
 
-    const user = process.env.EMAIL_USER;
-    const pass = process.env.EMAIL_PASS;
+    const user = process.env.EMAIL_USER?.trim();
+    // App Passwords from Google contain spaces (e.g. "abcd efgh ijkl mnop"), which must be stripped for SMTP auth
+    const pass = process.env.EMAIL_PASS?.replace(/\s+/g, "");
 
     if (!user || !pass) {
         throw new Error(
@@ -16,9 +17,7 @@ function getTransporter(): nodemailer.Transporter {
     }
 
     transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
+        service: "gmail",
         auth: { user, pass },
     });
 

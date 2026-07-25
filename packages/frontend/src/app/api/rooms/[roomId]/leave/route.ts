@@ -28,6 +28,29 @@ async function notifyKeyRotationPending(
   });
 }
 
+async function notifyMembershipUpdate(
+  userId: string,
+  roomId: string,
+  payload: Record<string, unknown>
+) {
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
+  const secret =
+    process.env.INTERNAL_WS_SECRET ||
+    process.env.BETTER_AUTH_SECRET ||
+    process.env.WS_TICKET_SECRET;
+  if (!secret) return;
+  await fetch(`${wsUrl}/internal/membership-updated`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": secret,
+    },
+    body: JSON.stringify({ userId, roomId, ...payload }),
+  }).catch((err) => {
+    console.error("[leave] Failed to notify websocket membership update:", err);
+  });
+}
+
 export async function POST(req: Request, context: RouteContext) {
   const authResult = await requireSession(req);
   if ("error" in authResult) return authResult.error;
@@ -179,6 +202,23 @@ export async function POST(req: Request, context: RouteContext) {
       { $set: { role: membership.role } }
     );
   }
+
+  // Notify the leaving user via WS (dual channel)
+  const userInfo = await db.collection("user").findOne(
+    { _id: userId },
+    { projection: { name: 1, email: 1 } }
+  );
+  const roomInfo = await db.collection("rooms").findOne(
+    { _id: roomId },
+    { projection: { name: 1 } }
+  );
+  void notifyMembershipUpdate(userId.toString(), roomId.toString(), {
+    status: "LEFT",
+    isBlocked: false,
+    userName: userInfo?.name || userInfo?.email || "",
+    roomName: roomInfo?.name ?? "",
+    reason: "left",
+  });
 
   return NextResponse.json({ ok: true });
 }

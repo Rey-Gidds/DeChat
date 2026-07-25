@@ -1,12 +1,24 @@
 import "./load-env";
 import express from "express";
 import http from "http";
-import { Server, Socket } from "socket.io";
+import { Server } from "socket.io";
 import cors from "cors";
 import { verifyWsTicket } from "./ws-ticket";
-import { fetchMessagesSince, isActiveMember, isRoomDisabled, persistEncryptedMessage, updateMessageContent, deleteMessage, getSenderInfo, getDb } from "./db";
+import {
+  fetchMessagesSince,
+  isActiveMember,
+  isRoomDisabled,
+  persistEncryptedMessage,
+  updateMessageContent,
+  deleteMessage,
+  getSenderInfo,
+  getDb,
+  getRoomsMetadata,
+} from "./db";
 import { ObjectId } from "mongodb";
 import { InMemoryPresenceStore, type PresenceStore } from "./presence-store";
+import { subscriptionManager } from "./subscription-manager";
+import type { AuthedSocket, MembershipCacheEntry } from "./types";
 
 const app = express();
 const allowedOrigin =
@@ -31,7 +43,7 @@ const io = new Server(server, {
 
 const presence: PresenceStore = new InMemoryPresenceStore();
 
-app.get("/health", (_req, res) => {
+app.get("/health", (_req:any, res:any) => {
   res.json({ status: "healthy", service: "websocket-server" });
 });
 
@@ -39,7 +51,28 @@ function getInternalSecret(): string | null {
   return process.env.INTERNAL_WS_SECRET || process.env.BETTER_AUTH_SECRET || process.env.WS_TICKET_SECRET || null;
 }
 
-app.post("/internal/membership-updated", (req, res) => {
+// ── Membership cache ──────────────────────────────────────────────────
+
+const MEMBERSHIP_CACHE_TTL = 60_000;
+
+async function checkMembership(socket: AuthedSocket, roomId: string): Promise<boolean> {
+  const cached = socket.data.membershipCache.get(roomId);
+  if (cached && cached.expiresAt > Date.now()) return cached.valid;
+  const valid = await isActiveMember(roomId, socket.data.userId);
+  socket.data.membershipCache.set(roomId, { valid, expiresAt: Date.now() + MEMBERSHIP_CACHE_TTL });
+  return valid;
+}
+
+function invalidateMembershipCache(userSockets: any[], roomId: string): void {
+  for (const s of userSockets) {
+    (s as any).data?.membershipCache?.delete?.(roomId);
+  }
+}
+
+// ── Internal REST endpoints ───────────────────────────────────────────
+
+// Extended membership-updated: dual-channel delivery
+app.post("/internal/membership-updated", async (req:any, res:any) => {
   const secret = getInternalSecret();
   if (!secret) {
     res.status(500).json({ error: "Internal secret not configured" });
@@ -52,24 +85,71 @@ app.post("/internal/membership-updated", (req, res) => {
     return;
   }
 
-  const { userId, roomId, status } = req.body ?? {};
-  if (!isNonEmptyString(userId) || !isNonEmptyString(roomId) || !isNonEmptyString(status)) {
-    res.status(400).json({ error: "userId, roomId, and status are required" });
+  const { userId, roomId, status, isBlocked, roomName, kickedBy, reason, isDeleted } = req.body ?? {};
+  if (!isNonEmptyString(userId) || !isNonEmptyString(roomId)) {
+    res.status(400).json({ error: "userId and roomId are required" });
     return;
   }
 
-  const normalized = status.toUpperCase();
+  const normalized = (status ?? "").toUpperCase();
+  const userSockets = await io.in(`user:${userId}`).fetchSockets();
+
+  if (isDeleted) {
+    // Room deleted — dual channel
+    io.to(`room:${roomId}`).emit("room_deleted", { roomId, roomName: roomName || "" });
+    for (const s of userSockets) {
+      io.to(`user:${(s as any).data.userId}`).emit("room_deleted", { roomId, roomName: roomName || "" });
+    }
+    const roomSubs = await io.in(`room:${roomId}`).fetchSockets();
+    await subscriptionManager.unsubscribeAllFromRoom(roomSubs as any[], roomId);
+    invalidateMembershipCache(userSockets as any[], roomId);
+    res.json({ ok: true });
+    return;
+  }
+
   if (normalized === "APPROVED") {
+    // Dual channel: room broadcast + user channel
+    io.to(`room:${roomId}`).emit("room_member_joined", {
+      roomId, userId, role: req.body.role, userIndex: req.body.userIndex,
+      userName: req.body.userName, userPfp: req.body.userPfp,
+    });
+    io.to(`user:${userId}`).emit("room_member_joined", {
+      roomId, roomName: roomName || "", memberCount: req.body.memberCount ?? 0, status: "APPROVED",
+    });
+    // Legacy compatibility
     io.to(`user:${userId}`).emit("REQUEST_APPROVED", { userId, roomId, status: normalized });
+  } else if (normalized === "LEFT" && !isBlocked) {
+    // Dual channel: room broadcast + user channel
+    io.to(`room:${roomId}`).emit("room_member_left", {
+      roomId, userId, userName: req.body.userName || "",
+    });
+    io.to(`user:${userId}`).emit("room_member_left", {
+      roomId, roomName: roomName || "", reason: "left",
+    });
+    // Legacy compatibility
+    io.to(`user:${userId}`).emit("membership_updated", { userId, roomId, status: normalized });
+  } else if (isBlocked || normalized === "KICKED" || normalized === "LEFT") {
+    // Kick / block — dual channel + force unsubscribe
+    io.to(`room:${roomId}`).emit("room_member_kicked", {
+      roomId, userId, kickedBy: kickedBy || null, reason: reason || "removed",
+    });
+    io.to(`user:${userId}`).emit("room_member_kicked", {
+      roomId, roomName: roomName || "", kickedBy: kickedBy || null, reason: reason || "removed",
+    });
+    await subscriptionManager.unsubscribeUserFromRoom(userSockets as any[], roomId);
+    invalidateMembershipCache(userSockets as any[], roomId);
+    // Legacy compatibility
+    io.to(`user:${userId}`).emit("membership_updated", { userId, roomId, status: normalized });
   } else if (normalized === "REJECTED") {
     io.to(`user:${userId}`).emit("REQUEST_REJECTED", { userId, roomId, status: normalized });
   } else {
     io.to(`user:${userId}`).emit("membership_updated", { userId, roomId, status: normalized });
   }
+
   res.json({ ok: true });
 });
 
-app.post("/internal/key-rotation-pending", (req, res) => {
+app.post("/internal/key-rotation-pending", (req:any, res:any) => {
   const secret = getInternalSecret();
   if (!secret) {
     res.status(500).json({ error: "Internal secret not configured" });
@@ -97,7 +177,7 @@ app.post("/internal/key-rotation-pending", (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/internal/key-rotation-complete", (req, res) => {
+app.post("/internal/key-rotation-complete", (req:any, res:any) => {
   const secret = getInternalSecret();
   if (!secret) {
     res.status(500).json({ error: "Internal secret not configured" });
@@ -123,6 +203,34 @@ app.post("/internal/key-rotation-complete", (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/internal/room-metadata-updated", (req:any, res:any) => {
+  const secret = getInternalSecret();
+  if (!secret) {
+    res.status(500).json({ error: "Internal secret not configured" });
+    return;
+  }
+  const provided = req.header("x-internal-secret");
+  if (provided !== secret) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const { roomId, newName, isDisabled } = req.body ?? {};
+  if (!isNonEmptyString(roomId)) {
+    res.status(400).json({ error: "roomId required" });
+    return;
+  }
+
+  if (isNonEmptyString(newName)) {
+    io.to(`room:${roomId}`).emit("room_renamed", { roomId, newName });
+  }
+  if (typeof isDisabled === "boolean") {
+    io.to(`room:${roomId}`).emit("room_disabled", { roomId, isDisabled });
+  }
+
+  res.json({ ok: true });
+});
+
 /**
  * Presence query endpoint — called by the REST API when building
  * the member list so it can merge online state without hitting MongoDB.
@@ -130,7 +238,7 @@ app.post("/internal/key-rotation-complete", (req, res) => {
  * GET /internal/presence?roomId=xxx
  * Returns: { onlineUserIds: string[] }
  */
-app.get("/internal/presence", (req, res) => {
+app.get("/internal/presence", (req:any, res:any) => {
   const secret = getInternalSecret();
   if (!secret) {
     res.status(500).json({ error: "Internal secret not configured" });
@@ -148,17 +256,12 @@ app.get("/internal/presence", (req, res) => {
     return;
   }
 
-  const onlineUserIds = Array.from(presence.onlineUsers(roomId));
+  const onlineUserIds = Array.from(presence.viewingUsers(roomId));
   res.json({ onlineUserIds });
 });
 
-type AuthedSocket = Socket & {
-  data: {
-    userId: string;
-    roomId?: string;
-    joinedRooms: Set<string>;
-  };
-};
+
+// ── Constants ─────────────────────────────────────────────────────────
 
 const MAX_ENVELOPE_FIELD_SIZE = 8_192;
 const MAX_TYPING_PREVIEW_SIZE = 120;
@@ -175,6 +278,8 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+// ── Auth Middleware ───────────────────────────────────────────────────
+
 io.use((socket: AuthedSocket, next) => {
   const ticket =
     (socket.handshake.auth?.ticket as string | undefined) ||
@@ -190,18 +295,36 @@ io.use((socket: AuthedSocket, next) => {
   }
 
   socket.data.userId = payload.userId;
+  // roomId is set only for room-type tickets (backward compat);
+  // user-type tickets leave roomId undefined (global socket).
   socket.data.roomId = payload.roomId;
   next();
 });
 
-io.on("connection", (socket: AuthedSocket) => {
-  console.log(`Socket connected: ${socket.id} (user ${socket.data.userId})`);
-  socket.data.joinedRooms = new Set();
+// ── Connection Handler ────────────────────────────────────────────────
+
+io.on("connection", async (socket: AuthedSocket) => {
+  console.log(`Socket connected: ${socket.id} (user ${socket.data.userId}, type=${socket.data.roomId ? "room" : "user"})`);
+
+  // Initialize connection-scoped data
+  socket.data.subscribedRooms = new Set();
+  socket.data.membershipCache = new Map<string, MembershipCacheEntry>();
+
   socket.on("error", (err) => {
     console.error(`[socket ${socket.id}] error:`, err);
   });
 
+  // Always join the user's personal channel
   void socket.join(`user:${socket.data.userId}`);
+
+  // ── Global socket: bulk subscribe to all approved rooms ────────────
+  const isGlobalSocket = !socket.data.roomId;
+  if (isGlobalSocket) {
+    const subCount = await subscriptionManager.initializeSubscriptions(socket);
+    console.log(`[socket ${socket.id}] Global socket: subscribed to ${subCount} rooms`);
+  }
+
+  // ── watch_room_membership ─────────────────────────────────────────
 
   socket.on("watch_room_membership", async (payload: { roomId?: string }, ack) => {
     const roomId = payload?.roomId;
@@ -209,9 +332,27 @@ io.on("connection", (socket: AuthedSocket) => {
       ack?.({ ok: false, error: "roomId required" });
       return;
     }
-    // Allow pending users to watch membership changes without joining the room.
     ack?.({ ok: true });
   });
+
+  // ── subscribe_room (global socket: user joins new room mid-session) ─
+
+  socket.on("subscribe_room", async (payload: { roomId?: string }, ack) => {
+    const roomId = payload?.roomId;
+    if (!roomId) {
+      ack?.({ ok: false, error: "roomId required" });
+      return;
+    }
+    const member = await checkMembership(socket, roomId);
+    if (!member) {
+      ack?.({ ok: false, error: "Not an active member of this room" });
+      return;
+    }
+    const added = await subscriptionManager.subscribeRoom(socket, roomId);
+    ack?.({ ok: true, subscribed: added });
+  });
+
+  // ── join_room ────────────────────────────────────────────────────
 
   socket.on("join_room", async (payload: { roomId?: string }, ack) => {
     const roomId = payload?.roomId || socket.data.roomId;
@@ -220,27 +361,84 @@ io.on("connection", (socket: AuthedSocket) => {
       return;
     }
 
-    const member = await isActiveMember(roomId, socket.data.userId);
+    const member = await checkMembership(socket, roomId);
     if (!member) {
       ack?.({ ok: false, error: "Not an active member of this room" });
       return;
     }
 
-    if (socket.data.roomId && socket.data.roomId !== roomId) {
+    // For per-room sockets: leave previous room
+    if (!isGlobalSocket && socket.data.roomId && socket.data.roomId !== roomId) {
       socket.leave(`room:${socket.data.roomId}`);
     }
 
+    // For global sockets: ensure subscription (may already be subscribed)
+    if (isGlobalSocket && !socket.data.subscribedRooms.has(roomId)) {
+      await subscriptionManager.subscribeRoom(socket, roomId);
+    }
+
     socket.data.roomId = roomId;
-    socket.data.joinedRooms.add(roomId);
-    await socket.join(`room:${roomId}`);
+    if (!isGlobalSocket) {
+      socket.data.subscribedRooms.add(roomId);
+      await socket.join(`room:${roomId}`);
+      presence.connect(roomId, socket.data.userId);
+      presence.viewingConnect(roomId, socket.data.userId);
+      io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
+        roomId,
+        userId: socket.data.userId,
+        isOnline: true,
+      });
+
+      // Notify room that user is viewing (new global socket event)
+      io.to(`room:${roomId}`).emit("viewing_room_start", {
+        roomId,
+        userId: socket.data.userId,
+      });
+    }
+
+    ack?.({ ok: true, roomId });
+  });
+
+
+  // ── viewing_room_start & viewing_room_stop ────────────────────────
+  socket.on("viewing_room_start", async (payload: { roomId?: string }) => {
+    const roomId = payload?.roomId;
+    if (!roomId) return;
+    socket.data.roomId = roomId;
     presence.connect(roomId, socket.data.userId);
+    presence.viewingConnect(roomId, socket.data.userId);
     io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
       roomId,
       userId: socket.data.userId,
       isOnline: true,
     });
-    ack?.({ ok: true, roomId });
+    io.to(`room:${roomId}`).emit("viewing_room_start", {
+      roomId,
+      userId: socket.data.userId,
+    });
   });
+
+  socket.on("viewing_room_stop", async (payload: { roomId?: string }) => {
+    const roomId = payload?.roomId || socket.data.roomId;
+    if (!roomId) return;
+    presence.viewingDisconnect(roomId, socket.data.userId);
+    const remaining = presence.disconnect(roomId, socket.data.userId);
+    const isOnline = remaining > 0;
+    io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
+      roomId,
+      userId: socket.data.userId,
+      isOnline,
+    });
+    io.to(`room:${roomId}`).emit("viewing_room_stop", {
+      roomId,
+      userId: socket.data.userId,
+    });
+    if (socket.data.roomId === roomId) {
+      socket.data.roomId = undefined;
+    }
+  });
+
+  // ── leave_room ───────────────────────────────────────────────────
 
   socket.on("leave_room", async (payload: { roomId?: string }, ack) => {
     const roomId = payload?.roomId || socket.data.roomId;
@@ -250,21 +448,35 @@ io.on("connection", (socket: AuthedSocket) => {
     }
 
     const remaining = presence.disconnect(roomId, socket.data.userId);
+    presence.viewingDisconnect(roomId, socket.data.userId);
     const isOnline = remaining > 0;
-    // Emit BEFORE leaving the socket room so the leaving user receives this too.
     io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
       roomId,
       userId: socket.data.userId,
       isOnline,
     });
 
-    await socket.leave(`room:${roomId}`);
-    socket.data.joinedRooms.delete(roomId);
-    if (socket.data.roomId === roomId) {
+    // Notify room that user stopped viewing
+    io.to(`room:${roomId}`).emit("viewing_room_stop", {
+      roomId,
+      userId: socket.data.userId,
+    });
+
+    if (isGlobalSocket) {
+      // Global socket: don't leave Socket.IO room, just clear viewing state
       socket.data.roomId = undefined;
+    } else {
+      // Per-room socket: actually leave the room
+      await socket.leave(`room:${roomId}`);
+      socket.data.subscribedRooms.delete(roomId);
+      if (socket.data.roomId === roomId) {
+        socket.data.roomId = undefined;
+      }
     }
     ack?.({ ok: true });
   });
+
+  // ── send_message ─────────────────────────────────────────────────
 
   socket.on(
     "send_message",
@@ -286,7 +498,7 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      const member = await isActiveMember(roomId, socket.data.userId);
+      const member = await checkMembership(socket, roomId);
       if (!member) {
         ack?.({ ok: false, error: "Not an active member of this room" });
         return;
@@ -319,7 +531,6 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      // Sanitize clientMessageId (optional — backward compatible)
       const clientMessageId = typeof payload?.clientMessageId === "string"
         ? payload.clientMessageId.slice(0, 64)
         : null;
@@ -413,14 +624,41 @@ io.on("connection", (socket: AuthedSocket) => {
           clientMessageId,
         };
 
-        // ACK back to sender (for outbox reconciliation)
+        // ACK back to sender
         ack?.({
           ok: true,
           message: outbound,
         });
 
-        // Broadcast to room
+        // Broadcast to room (full encrypted message)
         io.to(`room:${roomId}`).emit("room_message", outbound);
+
+        // ── NEW: Lightweight room broadcast for room-list reordering ──
+        io.to(`room:${roomId}`).emit("room_new_message_notify", {
+          roomId,
+          senderId: socket.data.userId,
+          senderName: senderInfo.name,
+          senderUserIndex: senderInfo.userIndex,
+          senderPfp: senderInfo.pfp,
+          messageType,
+          createdAt: savedMessage.createdAt,
+          messageId: savedMessage._id,
+        });
+
+        // ── NEW: Per-subscriber unread increment (skip sender + viewers) ──
+        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        for (const sRaw of roomSockets) {
+          const s = sRaw as any;
+          if (s.data.userId === socket.data.userId) continue;           // skip sender
+          if (s.data.roomId === roomId) continue;                       // skip viewers
+          io.to(`user:${s.data.userId}`).emit("user_unread_increment", {
+            roomId,
+            senderId: socket.data.userId,
+            senderName: senderInfo.name,
+            messageType,
+            createdAt: savedMessage.createdAt,
+          });
+        }
       } catch (err) {
         ack?.({
           ok: false,
@@ -429,6 +667,8 @@ io.on("connection", (socket: AuthedSocket) => {
       }
     }
   );
+
+  // ── edit_message ──────────────────────────────────────────────────
 
   socket.on(
     "edit_message",
@@ -453,7 +693,7 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      const member = await isActiveMember(roomId, socket.data.userId);
+      const member = await checkMembership(socket, roomId);
       if (!member) {
         ack?.({ ok: false, error: "Not an active member of this room" });
         return;
@@ -497,7 +737,6 @@ io.on("connection", (socket: AuthedSocket) => {
           return;
         }
 
-        // 15-minute edit window enforcement
         const now = new Date();
         const createdAt = message.createdAt instanceof Date ? message.createdAt : new Date(message.createdAt);
         const diffMs = now.getTime() - createdAt.getTime();
@@ -506,7 +745,6 @@ io.on("connection", (socket: AuthedSocket) => {
           return;
         }
 
-        // Max 2 edits allowed
         const currentEditCount = (typeof (message as any).editCount === "number") ? (message as any).editCount : 0;
         if (currentEditCount >= 2) {
           ack?.({ ok: false, error: "MAX_EDITS_REACHED" });
@@ -572,6 +810,8 @@ io.on("connection", (socket: AuthedSocket) => {
     }
   );
 
+  // ── delete_message ────────────────────────────────────────────────
+
   socket.on(
     "delete_message",
     async (
@@ -592,7 +832,7 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      const member = await isActiveMember(roomId, socket.data.userId);
+      const member = await checkMembership(socket, roomId);
       if (!member) {
         ack?.({ ok: false, error: "Not an active member of this room" });
         return;
@@ -645,6 +885,8 @@ io.on("connection", (socket: AuthedSocket) => {
     }
   );
 
+  // ── typing_start ──────────────────────────────────────────────────
+
   socket.on(
     "typing_start",
     async (payload: { roomId?: string; preview?: string }, ack) => {
@@ -654,7 +896,7 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      const member = await isActiveMember(roomId, socket.data.userId);
+      const member = await checkMembership(socket, roomId);
       if (!member) {
         ack?.({ ok: false, error: "Not an active member of this room" });
         return;
@@ -680,6 +922,8 @@ io.on("connection", (socket: AuthedSocket) => {
     }
   );
 
+  // ── typing_stop ───────────────────────────────────────────────────
+
   socket.on("typing_stop", async (payload: { roomId?: string }, ack) => {
     const roomId = payload?.roomId || socket.data.roomId;
     if (!roomId) {
@@ -687,7 +931,7 @@ io.on("connection", (socket: AuthedSocket) => {
       return;
     }
 
-    const member = await isActiveMember(roomId, socket.data.userId);
+    const member = await checkMembership(socket, roomId);
     if (!member) {
       ack?.({ ok: false, error: "Not an active member of this room" });
       return;
@@ -706,6 +950,8 @@ io.on("connection", (socket: AuthedSocket) => {
     ack?.({ ok: true });
   });
 
+  // ── sync_since ────────────────────────────────────────────────────
+
   socket.on(
     "sync_since",
     async (
@@ -723,7 +969,7 @@ io.on("connection", (socket: AuthedSocket) => {
         return;
       }
 
-      const member = await isActiveMember(roomId, socket.data.userId);
+      const member = await checkMembership(socket, roomId);
       if (!member) {
         ack?.({ ok: false, error: "Not an active member of this room" });
         return;
@@ -748,31 +994,79 @@ io.on("connection", (socket: AuthedSocket) => {
     }
   );
 
-  socket.on("disconnect", () => {
+  // ── sync_metadata (NEW: global socket metadata sync on reconnect) ──
+
+  socket.on("sync_metadata", async (_, ack) => {
+    const roomIds = [...socket.data.subscribedRooms];
+    if (roomIds.length === 0) {
+      ack?.({ ok: true, metadata: [] });
+      return;
+    }
+    try {
+      const metadata = await getRoomsMetadata(roomIds);
+      ack?.({ ok: true, metadata });
+    } catch {
+      ack?.({ ok: false, error: "Failed to sync metadata" });
+    }
+  });
+
+  // ── disconnect ────────────────────────────────────────────────────
+
+  socket.on("disconnect", async () => {
     console.log(`Socket disconnected: ${socket.id}`);
     const userId = socket.data.userId;
-    for (const roomId of socket.data.joinedRooms) {
+
+    // Emit PRESENCE_UPDATED for all subscribed rooms (global socket)
+    // or joinedRooms fallback for per-room sockets
+    const rooms: string[] = socket.data.subscribedRooms.size > 0
+      ? Array.from(socket.data.subscribedRooms) as string[]
+      : [];
+
+    for (const roomId of rooms) {
       const remaining = presence.disconnect(roomId, userId);
+      presence.viewingDisconnect(roomId, userId);
       const isOnline = remaining > 0;
       io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
         roomId,
         userId,
         isOnline,
       });
+
+      // Notify room that user stopped viewing (if they were viewing)
+      if (socket.data.roomId === roomId) {
+        io.to(`room:${roomId}`).emit("viewing_room_stop", {
+          roomId,
+          userId,
+        });
+      }
     }
-    socket.data.joinedRooms.clear();
+
+    await subscriptionManager.handleDisconnect(socket);
+    socket.data.membershipCache.clear();
   });
 
-  // ── Heartbeat ──
-  socket.on("heartbeat", (payload: { roomId?: string }, ack) => {
-    const roomId = payload?.roomId || socket.data.roomId;
-    if (!roomId || !socket.data.userId) {
+  // ── Heartbeat (supports both room-scoped and global) ───────────────
+
+  socket.on("heartbeat", (payload: { roomId?: string; activeRoomId?: string | null }, ack) => {
+    const userId = socket.data.userId;
+    if (!userId) {
       ack?.({ ok: false });
       return;
     }
-    presence.heartbeat(roomId, socket.data.userId);
+
+    // Global presence: always update
+    presence.globalHeartbeat?.(userId);
+
+    // Room presence: only when activeRoomId is explicitly provided (user is viewing/inside the room)
+    const activeRoomId = payload?.activeRoomId;
+    if (activeRoomId) {
+      presence.heartbeat(activeRoomId, userId);
+      presence.viewingHeartbeat(activeRoomId, userId);
+    }
+
     ack?.({ ok: true });
   });
+
 });
 
 // Start periodic heartbeat eviction — emits PRESENCE_UPDATED for stale users

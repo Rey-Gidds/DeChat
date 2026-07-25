@@ -11,10 +11,14 @@ import { TrendingTags } from "@/components/trending-tags";
 
 import { generateUserKeyPair, exportPublicKey, savePrivateKey } from "@/lib/crypto";
 
+import { useUnreadStore } from "@/lib/unread-store";
+import { useGlobalSocket } from "@/lib/global-socket-context";
+
 interface MeProfile {
   id: string;
   publicKey: string | null;
 }
+
 
 function TagFilter({
   selectedTags,
@@ -143,7 +147,28 @@ export function RoomDiscovery() {
   const [profile, setProfile] = useState<MeProfile | null>(null);
   const [isGeneratingKeys, setIsGeneratingKeys] = useState(false);
 
+  const { counts } = useUnreadStore();
+  const { socket } = useGlobalSocket();
+  const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!socket) return;
+    const onTypingStarted = (p: { roomId: string }) => {
+      if (p?.roomId) setTypingMap((prev) => ({ ...prev, [p.roomId]: true }));
+    };
+    const onTypingStopped = (p: { roomId: string }) => {
+      if (p?.roomId) setTypingMap((prev) => ({ ...prev, [p.roomId]: false }));
+    };
+    socket.on("typing_started", onTypingStarted);
+    socket.on("typing_stopped", onTypingStopped);
+    return () => {
+      socket.off("typing_started", onTypingStarted);
+      socket.off("typing_stopped", onTypingStopped);
+    };
+  }, [socket]);
+
   function addTag(tag: string) {
+
     if (!selectedTags.includes(tag)) {
       setSelectedTags([...selectedTags, tag]);
     }
@@ -345,15 +370,23 @@ export function RoomDiscovery() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.id ?? room._id?.toString()}
-                room={room}
-                onJoin={handleJoin}
-                joiningId={joiningId}
-              />
-            ))}
+            {rooms.map((room) => {
+              const rId = room.id ?? room._id?.toString() ?? "";
+              const unread = counts[rId] ?? 0;
+              const isTyping = Boolean(typingMap[rId]);
+              return (
+                <RoomCard
+                  key={rId}
+                  room={room}
+                  onJoin={handleJoin}
+                  joiningId={joiningId}
+                  unreadCount={unread}
+                  isTyping={isTyping}
+                />
+              );
+            })}
           </div>
+
 
           {nextCursor && (
             <div className="mt-8 flex justify-center">

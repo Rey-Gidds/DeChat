@@ -16,6 +16,9 @@ import {
   stopHeartbeat,
   type RealtimeRoomMessage,
   type TypingEventPayload,
+  USE_GLOBAL_SOCKET,
+  getGlobalSocket,
+  startGlobalHeartbeat,
 } from "@/lib/socket-client";
 import { ReconnectionManager } from "@/lib/reconnection-manager";
 import { AppLifecycle } from "@/lib/lifecycle";
@@ -96,6 +99,8 @@ import {
   loadOptimisticMessages,
 } from "@/lib/outbox-reconcile";
 import { OutboxRetryWorker, flushRotationQueue } from "@/lib/outbox-worker";
+import { useUnreadStore } from "@/lib/unread-store";
+import { useMyRooms } from "@/hooks/use-swr-hooks";
 
 type MembershipResponse = {
   membership?: {
@@ -288,6 +293,9 @@ export default function RoomChatPage() {
   const { data: session } = useSession();
   // Cached userId from better-auth session — available instantly on SPA navigations.
   const sessionUserId = session?.user?.id ?? null;
+  const { clear: clearUnread } = useUnreadStore();
+
+  const { memberships: cachedMyRooms } = useMyRooms("APPROVED");
 
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<UiMessage[]>([]);
@@ -297,6 +305,35 @@ export default function RoomChatPage() {
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [cacheServed, setCacheServed] = useState(false);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
+
+  useEffect(() => {
+    const cachedRoom = cachedMyRooms.find((r) => r.roomId === roomId)?.room;
+    if (cachedRoom?.name) {
+      setRoomMeta((prev) => {
+        if (!prev) {
+          return {
+            room: {
+              id: roomId ?? "",
+              name: cachedRoom.name,
+              roomLink: "",
+              maxMembers: cachedRoom.maxMembers ?? 500,
+              isDisabled: cachedRoom.isDisabled,
+              joinPolicy: cachedRoom.joinPolicy,
+            },
+            memberCount: cachedRoom.memberCount ?? 0,
+            membership: { status: "APPROVED", role: "MEMBER" },
+          };
+        }
+        if (prev.room.name !== cachedRoom.name) {
+          return {
+            ...prev,
+            room: { ...prev.room, name: cachedRoom.name },
+          };
+        }
+        return prev;
+      });
+    }
+  }, [cachedMyRooms, roomId]);
   const [membersOpen, setMembersOpen] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
@@ -397,6 +434,9 @@ export default function RoomChatPage() {
   const workerRef = useRef<OutboxRetryWorker | null>(null);
   const reconnectionRef = useRef<ReconnectionManager | null>(null);
   const lifecycleRef = useRef<AppLifecycle | null>(null);
+  const handlerRef = useRef<Map<string, (...args: any[]) => void> | null>(null);
+  const reconnectHandlerRef = useRef<(() => void) | null>(null);
+  const waitSocketRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMembersRef = useRef<() => void>(() => {});
   const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -716,7 +756,13 @@ export default function RoomChatPage() {
         const metaData = (await metaRes.json()) as RoomMeta & { error?: string };
         if (!metaRes.ok) throw new Error(metaData.error || "Failed to load room");
         if (!mounted) return;
-        setRoomMeta(metaData);
+        setRoomMeta((prev) => ({
+          ...metaData,
+          room: {
+            ...metaData.room,
+            name: metaData.room.name || prev?.room.name || "",
+          },
+        }));
 
         setRoomDisabled(Boolean(metaData.room?.isDisabled));
 
@@ -984,7 +1030,192 @@ export default function RoomChatPage() {
         setIsAtBottom(true);
 
         // Phase 4: Live WebSocket connection & retry worker
-        // Perform connection asynchronously in the background so it never blocks the UI or input activation.
+        // Dual path: global socket (feature-flagged) vs per-room (legacy)
+
+        if (USE_GLOBAL_SOCKET) {
+          // ── Global socket path ──────────────────────────────────
+
+          const gs = getGlobalSocket();
+          if (!gs?.connected) {
+            setStatus("Connecting...");
+            waitSocketRef.current = setInterval(() => {
+              const s = getGlobalSocket();
+              if (s?.connected) {
+                if (waitSocketRef.current) clearInterval(waitSocketRef.current);
+                waitSocketRef.current = null;
+                setStatus("Connected");
+              }
+            }, 200);
+          }
+
+          const gsocket = getGlobalSocket();
+          // Tracking viewing state
+          if (gsocket?.connected) {
+            gsocket.emit("viewing_room_start", { roomId });
+          }
+          // Clear unread counts for this room when opened
+          void clearUnread(roomId);
+          setStatus("Connected");
+
+          // Global heartbeat
+          startGlobalHeartbeat(roomId);
+
+          // Reconnect handler — resync on network recovery
+          const onReconnect = () => {
+            void runSync();
+            refreshMembersRef.current();
+          };
+          reconnectHandlerRef.current = onReconnect;
+          gsocket?.io.on("reconnect", onReconnect);
+
+          // ── 9 Event handlers (named refs for cleanup) ────────
+
+          const onRoomMessage = async (incoming: RealtimeRoomMessage) => {
+            if (incoming.roomId !== roomId) return;
+
+            if (incoming.senderId === membership.userId) {
+              const clientMsgId = incoming.clientMessageId;
+              if (clientMsgId) {
+                await deleteOutboxEntry(clientMsgId);
+                const roomKey = roomKeyRef.current;
+                let decryptedBody = "";
+                if (roomKey) {
+                  try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {}
+                }
+                reconcileOptimisticMessage(clientMsgId, incoming, decryptedBody, membership.userId!, setMessages);
+              } else {
+                const matched = await findOutboxEntryByCipherprint(roomId, incoming.ciphertext, incoming.iv);
+                if (matched) {
+                  const roomKey = roomKeyRef.current;
+                  let decryptedBody = matched.displayBody;
+                  if (roomKey) {
+                    try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {}
+                  }
+                  await deleteOutboxEntry(matched.clientMessageId);
+                  reconcileOptimisticMessage(matched.clientMessageId, incoming, decryptedBody, membership.userId!, setMessages);
+                }
+              }
+            }
+
+            setNewMessagesCount((prev) => prev + 1);
+            await appendDecrypted([incoming], false);
+            await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
+          };
+
+          const onMessageEdited = async (incoming: RealtimeRoomMessage) => {
+            if (incoming.roomId !== roomId) return;
+            try {
+              const keyVersion = incoming.roomKeyVersion ?? 0;
+              const roomKey = await getRoomKeyVersion(roomId, keyVersion);
+              let body = "";
+              if (roomKey) {
+                try { body = await decryptMessage(incoming, roomKey); } catch {}
+              }
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === incoming.id
+                    ? { ...m, body: body || m.body, editedAt: incoming.editedAt ?? null, editCount: incoming.editCount ?? 0, ciphertext: incoming.ciphertext }
+                    : m
+                )
+              );
+            } catch {}
+          };
+
+          const onMessageDeleted = (payload: { roomId: string; messageId: string }) => {
+            if (payload.roomId !== roomId) return;
+            setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
+            void removeFromCache(roomId, payload.messageId);
+          };
+
+          const onTypingStarted = (payload: TypingEventPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers((prev) => prev.includes(payload.userId) ? prev : [...prev, payload.userId]);
+          };
+
+          const onTypingStopped = (payload: TypingEventPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
+          };
+
+          const onPresenceUpdated = (payload: { roomId: string; userId: string; isOnline: boolean }) => {
+            if (payload.roomId !== roomId) return;
+            const targetUserId = String(payload.userId);
+            setOnlineUserIds((prev) => {
+              const next = new Set(prev);
+              if (payload.isOnline) next.add(targetUserId);
+              else next.delete(targetUserId);
+              return next;
+            });
+            setMembers((prev) => {
+              const exists = prev.some((m) => String(m.userId) === targetUserId);
+              if (!exists && payload.isOnline) {
+                refreshMembersRef.current();
+                return prev;
+              }
+              return prev.map((m) =>
+                String(m.userId) === targetUserId ? { ...m, isOnline: payload.isOnline } : m
+              );
+            });
+          };
+
+          const onPendingRotation = (payload: { roomId: string; version: number }) => {
+            if (payload.roomId !== roomId) return;
+            setRoomKeyRotation((prev) => ({
+              ...prev,
+              pendingKeyRotation: true,
+              lastKeyVersion: payload.version - 1,
+            }));
+            setStatus("Updating security...");
+            setIsRotating(true);
+          };
+
+          const onRotationComplete = async (payload: { roomId: string; version: number }) => {
+            if (payload.roomId !== roomId) return;
+            setRoomKeyRotation((prev) => ({
+              ...prev,
+              pendingKeyRotation: false,
+              lastKeyVersion: payload.version,
+              currentKeyVersion: payload.version,
+            }));
+            setStatus("Connected");
+            setIsRotating(false);
+            await flushRotationQueue(roomId, payload.version, encryptMessage, getRoomKeyVersion);
+          };
+
+          const onRotationFailed = (payload: { roomId: string; version: number; error: string }) => {
+            if (payload.roomId !== roomId) return;
+            setStatus("Key rotation failed: " + payload.error);
+            setIsRotating(false);
+          };
+
+          if (gsocket) {
+            gsocket.on("room_message", onRoomMessage);
+            gsocket.on("message_edited", onMessageEdited);
+            gsocket.on("message_deleted", onMessageDeleted);
+            gsocket.on("typing_started", onTypingStarted);
+            gsocket.on("typing_stopped", onTypingStopped);
+            gsocket.on("PRESENCE_UPDATED", onPresenceUpdated);
+            gsocket.on("PENDING_KEY_ROTATION", onPendingRotation);
+            gsocket.on("KEY_ROTATION_COMPLETE", onRotationComplete);
+            gsocket.on("KEY_ROTATION_FAILED", onRotationFailed);
+          }
+
+          // Store refs for cleanup
+          const handlerMap = new Map<string, (...args: any[]) => void>();
+          handlerMap.set("room_message", onRoomMessage as any);
+          handlerMap.set("message_edited", onMessageEdited as any);
+          handlerMap.set("message_deleted", onMessageDeleted as any);
+          handlerMap.set("typing_started", onTypingStarted as any);
+          handlerMap.set("typing_stopped", onTypingStopped as any);
+          handlerMap.set("PRESENCE_UPDATED", onPresenceUpdated as any);
+          handlerMap.set("PENDING_KEY_ROTATION", onPendingRotation as any);
+          handlerMap.set("KEY_ROTATION_COMPLETE", onRotationComplete as any);
+          handlerMap.set("KEY_ROTATION_FAILED", onRotationFailed as any);
+          handlerRef.current = handlerMap;
+
+        } else {
+          // ── Legacy per-room socket path ────────────────────────
+
         const rm = new ReconnectionManager(roomId, async () => {
           await runSync();
           void workerRef.current?.flushImmediate();
@@ -1205,14 +1436,27 @@ export default function RoomChatPage() {
           console.warn("Failed to connect socket in background:", err);
         });
 
+        } // end else: legacy per-room path
+
         // Fetch members
         void fetch(`/api/rooms/${roomId}/members`, { credentials: "include" })
           .then((r) => r.json())
           .then((data) => {
             if (!mounted) return;
-            const m = (data.members ?? []) as RoomMember[];
-            setMembers(m);
-            setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => String(mm.userId))));
+            const fetchedMembers = (data.members ?? []) as RoomMember[];
+            setOnlineUserIds((currentOnline) => {
+              const merged = new Set(currentOnline);
+              for (const mm of fetchedMembers) {
+                if (mm.isOnline) merged.add(String(mm.userId));
+              }
+              setMembers(
+                fetchedMembers.map((m) => ({
+                  ...m,
+                  isOnline: merged.has(String(m.userId)),
+                }))
+              );
+              return merged;
+            });
           })
           .catch(() => undefined);
 
@@ -1247,17 +1491,49 @@ export default function RoomChatPage() {
 
     return () => {
       mounted = false;
-      reconnectionRef.current?.stop();
-      reconnectionRef.current = null;
-      lifecycleRef.current?.stop();
-      lifecycleRef.current = null;
-      workerRef.current?.stop();
-      workerRef.current = null;
+
+      if (USE_GLOBAL_SOCKET) {
+        // Clean up wait-socket polling if still running
+        if (waitSocketRef.current) {
+          clearInterval(waitSocketRef.current);
+          waitSocketRef.current = null;
+        }
+
+        // Remove all 9 event handlers from global socket
+        const gs = getGlobalSocket();
+        if (gs && handlerRef.current) {
+          for (const [event, handler] of handlerRef.current) {
+            gs.off(event, handler);
+          }
+          handlerRef.current = null;
+        }
+
+        // Remove reconnect handler
+        if (gs && reconnectHandlerRef.current) {
+          gs.io.off("reconnect", reconnectHandlerRef.current);
+          reconnectHandlerRef.current = null;
+        }
+
+        // Emit viewing_room_stop
+        gs?.emit("viewing_room_stop", { roomId });
+
+        // Stop heartbeat
+        stopHeartbeat();
+        // DO NOT disconnect socket — it's global
+      } else {
+        reconnectionRef.current?.stop();
+        reconnectionRef.current = null;
+        lifecycleRef.current?.stop();
+        lifecycleRef.current = null;
+        workerRef.current?.stop();
+        workerRef.current = null;
+        stopHeartbeat();
+        disconnectSocket();
+      }
+
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (rotationTimeoutRef.current) clearTimeout(rotationTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
-      stopHeartbeat();
-      disconnectSocket();
       setCacheServed(false);
       setIsBootstrapping(true);
     };
@@ -1889,9 +2165,20 @@ export default function RoomChatPage() {
     void fetch(`/api/rooms/${roomId}/members`, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
-        const m = (data.members ?? []) as RoomMember[];
-        setMembers(m);
-        setOnlineUserIds(new Set(m.filter((mm: any) => mm.isOnline).map((mm: any) => String(mm.userId))));
+        const fetchedMembers = (data.members ?? []) as RoomMember[];
+        setOnlineUserIds((currentOnline) => {
+          const merged = new Set(currentOnline);
+          for (const mm of fetchedMembers) {
+            if (mm.isOnline) merged.add(String(mm.userId));
+          }
+          setMembers(
+            fetchedMembers.map((m) => ({
+              ...m,
+              isOnline: merged.has(String(m.userId)),
+            }))
+          );
+          return merged;
+        });
       })
       .catch(() => undefined);
   }, [roomId]);

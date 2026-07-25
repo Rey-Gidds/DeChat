@@ -2,7 +2,10 @@
 
 import { io, Socket } from "socket.io-client";
 
+export const USE_GLOBAL_SOCKET = process.env.NEXT_PUBLIC_USE_GLOBAL_SOCKET == "true";
+
 let socket: Socket | null = null;
+let globalSocket: Socket | null = null;
 let activeRoomId: string | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const ACK_TIMEOUT_MS = 7_000;
@@ -236,12 +239,13 @@ export function setSocket(s: Socket): void {
 }
 
 function emitWithAck<T>(event: string, payload: unknown): Promise<T> {
-  if (!socket) {
+  const target = USE_GLOBAL_SOCKET ? globalSocket : socket;
+  if (!target) {
     return Promise.reject(new Error("Socket is not connected"));
   }
 
   return new Promise((resolve, reject) => {
-    socket!.timeout(ACK_TIMEOUT_MS).emit(event, payload, (err: unknown, response: T) => {
+    target.timeout(ACK_TIMEOUT_MS).emit(event, payload, (err: unknown, response: T) => {
       if (err) {
         reject(new Error("Socket request timed out"));
         return;
@@ -249,6 +253,60 @@ function emitWithAck<T>(event: string, payload: unknown): Promise<T> {
       resolve(response);
     });
   });
+}
+
+// ── Global-socket variants (for Phase 2 migration) ──
+
+function emitWithGlobalAck<T>(event: string, payload: unknown): Promise<T> {
+  if (!globalSocket) {
+    return Promise.reject(new Error("Global socket is not connected"));
+  }
+  return new Promise((resolve, reject) => {
+    globalSocket!.timeout(ACK_TIMEOUT_MS).emit(event, payload, (err: unknown, response: T) => {
+      if (err) {
+        reject(new Error("Socket request timed out"));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
+export async function sendGlobalEncryptedMessage(payload: OutboundEncryptedMessage) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string; message?: RealtimeRoomMessage }>(
+    "send_message",
+    payload
+  );
+}
+
+export async function syncGlobalSince(
+  roomId: string,
+  since: string,
+  sinceId?: string
+) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string; messages?: RealtimeRoomMessage[] }>(
+    "sync_since",
+    { roomId, since, sinceId }
+  );
+}
+
+export async function emitGlobalTypingStart(roomId: string, preview?: string) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing_start", { roomId, preview });
+}
+
+export async function emitGlobalTypingStop(roomId: string) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing_stop", { roomId });
+}
+
+export async function editGlobalEncryptedMessage(payload: OutboundEditMessage) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string; message?: RealtimeRoomMessage }>(
+    "edit_message",
+    payload
+  );
+}
+
+export async function deleteGlobalEncryptedMessage(payload: OutboundDeleteMessage) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string }>("delete_message", payload);
 }
 
 export async function sendEncryptedMessage(payload: OutboundEncryptedMessage) {
@@ -299,4 +357,24 @@ export async function editEncryptedMessage(payload: OutboundEditMessage) {
 
 export async function deleteEncryptedMessage(payload: OutboundDeleteMessage) {
   return emitWithAck<{ ok: boolean; error?: string }>("delete_message", payload);
+}
+
+// ── Global Socket (feature-flagged) ──────────────────────────────────
+
+export function getGlobalSocket(): Socket | null {
+  return globalSocket;
+}
+
+export function setGlobalSocket(s: Socket): void {
+  globalSocket?.disconnect();
+  globalSocket = s;
+}
+
+export function startGlobalHeartbeat(activeRoomId?: string | null): void {
+  if (heartbeatInterval) return;
+  heartbeatInterval = setInterval(() => {
+    if (globalSocket?.connected) {
+      globalSocket.emit("heartbeat", { activeRoomId: activeRoomId ?? null });
+    }
+  }, HEARTBEAT_INTERVAL_MS);
 }

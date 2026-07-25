@@ -5,9 +5,10 @@
 export const DB_NAME = "dechat-crypto-store";
 const STORE_NAME = "private-keys";
 const ROOM_KEY_STORE = "room-keys";
-export const DB_VERSION = 5;
+export const DB_VERSION = 6;
 const ROOM_KEY_VERSIONS_STORE = "room-key-versions";
 const OUTBOX_STORE = "message-outbox";
+const UNREAD_COUNTS_STORE = "unread-counts";
 
 // Initialize IndexedDB for secure local private key storage
 function getDB(): Promise<IDBDatabase> {
@@ -44,6 +45,11 @@ function getDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains("room-cache-meta")) {
         db.createObjectStore("room-cache-meta", { keyPath: "roomId" });
+      }
+
+      // NEW in v6: unread counts store (global WS migration)
+      if (!db.objectStoreNames.contains(UNREAD_COUNTS_STORE)) {
+        db.createObjectStore(UNREAD_COUNTS_STORE, { keyPath: "roomId" });
       }
     };
     request.onsuccess = () => resolve(request.result);

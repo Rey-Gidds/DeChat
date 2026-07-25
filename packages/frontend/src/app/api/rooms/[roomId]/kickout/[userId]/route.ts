@@ -34,7 +34,11 @@ async function notifyKeyRotationPending(
   });
 }
 
-async function notifyMembershipUpdate(userId: string, roomId: string, status: string) {
+async function notifyMembershipUpdate(
+  userId: string,
+  roomId: string,
+  payload: Record<string, unknown>
+) {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
   const secret =
     process.env.INTERNAL_WS_SECRET ||
@@ -48,7 +52,7 @@ async function notifyMembershipUpdate(userId: string, roomId: string, status: st
       "Content-Type": "application/json",
       "x-internal-secret": secret,
     },
-    body: JSON.stringify({ userId, roomId, status }),
+    body: JSON.stringify({ userId, roomId, ...payload }),
   }).catch((err) => {
     console.error("[kickout] Failed to notify websocket server:", err);
   });
@@ -150,8 +154,18 @@ export async function POST(req: Request, context: RouteContext) {
     );
   }
 
-  // 5. Notify the kicked user
-  await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), "KICKED");
+  // 5. Fetch room for name context and notify the kicked user
+  const roomInfo = await db.collection("rooms").findOne(
+    { _id: roomId },
+    { projection: { name: 1 } }
+  );
+  await notifyMembershipUpdate(targetUserId.toString(), roomId.toString(), {
+    status: "KICKED",
+    isBlocked: false,
+    kickedBy: adminId.toString(),
+    reason: "KICKED_BY_ADMIN",
+    roomName: roomInfo?.name ?? "",
+  });
 
   return NextResponse.json({ ok: true });
 }

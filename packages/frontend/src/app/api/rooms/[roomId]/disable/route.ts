@@ -7,7 +7,25 @@ import { getMembership } from "@/lib/membership-db";
 
 type RouteContext = { params: Promise<{ roomId: string }> };
 
-async function notifyMembershipUpdate(userId: string, roomId: string, status: string) {
+async function notifyRoomMetadata(roomId: string, payload: Record<string, unknown>) {
+  const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
+  const secret =
+    process.env.INTERNAL_WS_SECRET ||
+    process.env.BETTER_AUTH_SECRET ||
+    process.env.WS_TICKET_SECRET;
+  if (!secret) return;
+
+  await fetch(`${wsUrl}/internal/room-metadata-updated`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": secret,
+    },
+    body: JSON.stringify(payload),
+  }).catch(() => undefined);
+}
+
+async function notifyMembershipUpdate(userId: string, roomId: string, payload: Record<string, unknown>) {
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001";
   const secret =
     process.env.INTERNAL_WS_SECRET ||
@@ -21,7 +39,7 @@ async function notifyMembershipUpdate(userId: string, roomId: string, status: st
       "Content-Type": "application/json",
       "x-internal-secret": secret,
     },
-    body: JSON.stringify({ userId, roomId, status }),
+    body: JSON.stringify({ userId, roomId, ...payload }),
   }).catch(() => undefined);
 }
 
@@ -65,12 +83,15 @@ export async function PATCH(req: Request, context: RouteContext) {
       { $set: { isDisabled: true, updatedAt: now } }
     );
 
+    // Notify subscribers via WS that room is now disabled
+    void notifyRoomMetadata(roomId.toString(), { roomId: roomId.toString(), isDisabled: true });
+
     // Notify all pending users that their request was rejected due to room being disabled
     for (const pending of pendingRequests) {
-      await notifyMembershipUpdate(
+      void notifyMembershipUpdate(
         pending.userId.toString(),
         roomId.toString(),
-        "REJECTED"
+        { status: "REJECTED" }
       ).catch(() => undefined);
     }
   } else {
@@ -79,6 +100,9 @@ export async function PATCH(req: Request, context: RouteContext) {
       { _id: roomId },
       { $set: { isDisabled: false, updatedAt: now } }
     );
+
+    // Notify subscribers via WS that room is now enabled
+    void notifyRoomMetadata(roomId.toString(), { roomId: roomId.toString(), isDisabled: false });
   }
 
   return NextResponse.json({
