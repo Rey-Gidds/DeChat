@@ -19,7 +19,7 @@ function getUnreadDB(): Promise<IDBDatabase> {
   });
 }
 
-async function writeUnread(roomId: string, count: number): Promise<void> {
+async function writeUnread(roomId: string, count: number, latestMessageTimeStamp?: number): Promise<void> {
   const db = await getUnreadDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(UNREAD_STORE, "readwrite");
@@ -29,7 +29,7 @@ async function writeUnread(roomId: string, count: number): Promise<void> {
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     } else {
-      const req = store.put({ roomId, count });
+      const req = store.put({ roomId, count, latestMessageTimeStamp: latestMessageTimeStamp ?? Date.now() });
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     }
@@ -38,9 +38,10 @@ async function writeUnread(roomId: string, count: number): Promise<void> {
 
 interface UnreadState {
   counts: Record<string, number>;
-  increment: (roomId: string) => Promise<void>;
+  timestamps: Record<string, number>;
+  increment: (roomId: string, timestamp?: number) => Promise<void>;
   clear: (roomId: string) => Promise<void>;
-  set: (roomId: string, count: number) => Promise<void>;
+  set: (roomId: string, count: number, timestamp?: number) => Promise<void>;
   loadFromDB: () => Promise<void>;
 }
 
@@ -51,46 +52,55 @@ export function formatUnreadBadge(count: number): string {
 
 export const useUnreadStore = create<UnreadState>((set, get) => ({
   counts: {},
+  timestamps: {},
 
-  increment: async (roomId: string) => {
+  increment: async (roomId: string, timestamp?: number) => {
     const current = get().counts[roomId] ?? 0;
+    const ts = timestamp ?? Date.now();
     // Cap at 101 so max stored in IndexedDB is 101 (displayed as 100+)
     const next = Math.min(current + 1, 101);
-    await writeUnread(roomId, next);
+    await writeUnread(roomId, next, ts);
     set((s) => ({
       counts: { ...s.counts, [roomId]: next },
+      timestamps: { ...s.timestamps, [roomId]: ts },
     }));
   },
 
   clear: async (roomId: string) => {
     await writeUnread(roomId, 0);
     set((s) => {
-      const next = { ...s.counts };
-      delete next[roomId];
-      return { counts: next };
+      const nextCounts = { ...s.counts };
+      delete nextCounts[roomId];
+      const nextTimestamps = { ...s.timestamps };
+      delete nextTimestamps[roomId];
+      return { counts: nextCounts, timestamps: nextTimestamps };
     });
   },
 
-  set: async (roomId: string, count: number) => {
+  set: async (roomId: string, count: number, timestamp?: number) => {
     // Cap at 101 so max stored in IndexedDB is 101 (displayed as 100+)
     const boundedCount = count <= 0 ? 0 : Math.min(count, 101);
-    await writeUnread(roomId, boundedCount);
+    const ts = timestamp ?? Date.now();
+    await writeUnread(roomId, boundedCount, ts);
     if (boundedCount <= 0) {
       set((s) => {
-        const next = { ...s.counts };
-        delete next[roomId];
-        return { counts: next };
+        const nextCounts = { ...s.counts };
+        delete nextCounts[roomId];
+        const nextTimestamps = { ...s.timestamps };
+        delete nextTimestamps[roomId];
+        return { counts: nextCounts, timestamps: nextTimestamps };
       });
     } else {
       set((s) => ({
         counts: { ...s.counts, [roomId]: boundedCount },
+        timestamps: { ...s.timestamps, [roomId]: ts },
       }));
     }
   },
 
   loadFromDB: async () => {
     const db = await getUnreadDB();
-    const entries: { roomId: string; count: number }[] = await new Promise(
+    const entries: { roomId: string; count: number; latestMessageTimeStamp?: number }[] = await new Promise(
       (resolve, reject) => {
         const tx = db.transaction(UNREAD_STORE, "readonly");
         const store = tx.objectStore(UNREAD_STORE);
@@ -100,12 +110,16 @@ export const useUnreadStore = create<UnreadState>((set, get) => ({
       }
     );
     const counts: Record<string, number> = {};
+    const timestamps: Record<string, number> = {};
     for (const e of entries) {
       if (e.count > 0) {
         counts[e.roomId] = Math.min(e.count, 101);
+        if (e.latestMessageTimeStamp) {
+          timestamps[e.roomId] = e.latestMessageTimeStamp;
+        }
       }
     }
-    set({ counts });
+    set({ counts, timestamps });
   },
 }));
 

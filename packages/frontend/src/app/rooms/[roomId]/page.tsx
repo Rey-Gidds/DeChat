@@ -17,9 +17,10 @@ import {
   type RealtimeRoomMessage,
   type TypingEventPayload,
   USE_GLOBAL_SOCKET,
-  getGlobalSocket,
-  startGlobalHeartbeat,
+  setGlobalActiveRoomId,
 } from "@/lib/socket-client";
+import { useGlobalSocket } from "@/lib/global-socket-context";
+import { toast } from "sonner";
 import { ReconnectionManager } from "@/lib/reconnection-manager";
 import { AppLifecycle } from "@/lib/lifecycle";
 import {
@@ -115,6 +116,7 @@ type RoomMeta = {
   room: {
     id: string;
     name: string;
+    description?: string;
     roomLink: string;
     maxMembers: number;
     isDisabled?: boolean;
@@ -294,6 +296,7 @@ export default function RoomChatPage() {
   // Cached userId from better-auth session — available instantly on SPA navigations.
   const sessionUserId = session?.user?.id ?? null;
   const { clear: clearUnread } = useUnreadStore();
+  const { socket: gsSocket, connected: gsConnected } = useGlobalSocket();
 
   const { memberships: cachedMyRooms } = useMyRooms("APPROVED");
 
@@ -353,8 +356,6 @@ export default function RoomChatPage() {
   const [viewerMessageId, setViewerMessageId] = useState<string | null>(null);
   const [downArrowLoading, setDownArrowLoading] = useState(false);
   const [quoteLoading, setQuoteLoading] = useState(false);
-  // Dismissable inline toast for non-blocking errors (quoted message deleted, etc.)
-  const [toast, setToast] = useState<string | null>(null);
 
   // ── Reply / Edit / Delete state ──
   const [replyContext, setReplyContext] = useState<{
@@ -434,9 +435,6 @@ export default function RoomChatPage() {
   const workerRef = useRef<OutboxRetryWorker | null>(null);
   const reconnectionRef = useRef<ReconnectionManager | null>(null);
   const lifecycleRef = useRef<AppLifecycle | null>(null);
-  const handlerRef = useRef<Map<string, (...args: any[]) => void> | null>(null);
-  const reconnectHandlerRef = useRef<(() => void) | null>(null);
-  const waitSocketRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const refreshMembersRef = useRef<() => void>(() => {});
   const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -605,7 +603,7 @@ export default function RoomChatPage() {
         // If the target message was deleted, show a dismissable toast
         if (!response.messages.length) {
           setQuoteLoading(false);
-          setToast("The quoted message no longer exists.");
+          toast("The quoted message no longer exists.");
           return;
         }
 
@@ -638,7 +636,7 @@ export default function RoomChatPage() {
         });
       } catch {
         setQuoteLoading(false);
-        setToast("The quoted message could not be loaded.");
+        toast.error("The quoted message could not be loaded.");
       }
     },
     [roomId, currentUserId, quoteLoading]
@@ -1030,190 +1028,10 @@ export default function RoomChatPage() {
         setIsAtBottom(true);
 
         // Phase 4: Live WebSocket connection & retry worker
-        // Dual path: global socket (feature-flagged) vs per-room (legacy)
+        // Global socket path is handled by a separate useEffect (reactive to socket lifecycle).
+        // Legacy per-room path stays here for backward compat.
 
-        if (USE_GLOBAL_SOCKET) {
-          // ── Global socket path ──────────────────────────────────
-
-          const gs = getGlobalSocket();
-          if (!gs?.connected) {
-            setStatus("Connecting...");
-            waitSocketRef.current = setInterval(() => {
-              const s = getGlobalSocket();
-              if (s?.connected) {
-                if (waitSocketRef.current) clearInterval(waitSocketRef.current);
-                waitSocketRef.current = null;
-                setStatus("Connected");
-              }
-            }, 200);
-          }
-
-          const gsocket = getGlobalSocket();
-          // Tracking viewing state
-          if (gsocket?.connected) {
-            gsocket.emit("viewing_room_start", { roomId });
-          }
-          // Clear unread counts for this room when opened
-          void clearUnread(roomId);
-          setStatus("Connected");
-
-          // Global heartbeat
-          startGlobalHeartbeat(roomId);
-
-          // Reconnect handler — resync on network recovery
-          const onReconnect = () => {
-            void runSync();
-            refreshMembersRef.current();
-          };
-          reconnectHandlerRef.current = onReconnect;
-          gsocket?.io.on("reconnect", onReconnect);
-
-          // ── 9 Event handlers (named refs for cleanup) ────────
-
-          const onRoomMessage = async (incoming: RealtimeRoomMessage) => {
-            if (incoming.roomId !== roomId) return;
-
-            if (incoming.senderId === membership.userId) {
-              const clientMsgId = incoming.clientMessageId;
-              if (clientMsgId) {
-                await deleteOutboxEntry(clientMsgId);
-                const roomKey = roomKeyRef.current;
-                let decryptedBody = "";
-                if (roomKey) {
-                  try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {}
-                }
-                reconcileOptimisticMessage(clientMsgId, incoming, decryptedBody, membership.userId!, setMessages);
-              } else {
-                const matched = await findOutboxEntryByCipherprint(roomId, incoming.ciphertext, incoming.iv);
-                if (matched) {
-                  const roomKey = roomKeyRef.current;
-                  let decryptedBody = matched.displayBody;
-                  if (roomKey) {
-                    try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {}
-                  }
-                  await deleteOutboxEntry(matched.clientMessageId);
-                  reconcileOptimisticMessage(matched.clientMessageId, incoming, decryptedBody, membership.userId!, setMessages);
-                }
-              }
-            }
-
-            setNewMessagesCount((prev) => prev + 1);
-            await appendDecrypted([incoming], false);
-            await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
-          };
-
-          const onMessageEdited = async (incoming: RealtimeRoomMessage) => {
-            if (incoming.roomId !== roomId) return;
-            try {
-              const keyVersion = incoming.roomKeyVersion ?? 0;
-              const roomKey = await getRoomKeyVersion(roomId, keyVersion);
-              let body = "";
-              if (roomKey) {
-                try { body = await decryptMessage(incoming, roomKey); } catch {}
-              }
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === incoming.id
-                    ? { ...m, body: body || m.body, editedAt: incoming.editedAt ?? null, editCount: incoming.editCount ?? 0, ciphertext: incoming.ciphertext }
-                    : m
-                )
-              );
-            } catch {}
-          };
-
-          const onMessageDeleted = (payload: { roomId: string; messageId: string }) => {
-            if (payload.roomId !== roomId) return;
-            setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
-            void removeFromCache(roomId, payload.messageId);
-          };
-
-          const onTypingStarted = (payload: TypingEventPayload) => {
-            if (payload.roomId !== roomId) return;
-            setTypingUsers((prev) => prev.includes(payload.userId) ? prev : [...prev, payload.userId]);
-          };
-
-          const onTypingStopped = (payload: TypingEventPayload) => {
-            if (payload.roomId !== roomId) return;
-            setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
-          };
-
-          const onPresenceUpdated = (payload: { roomId: string; userId: string; isOnline: boolean }) => {
-            if (payload.roomId !== roomId) return;
-            const targetUserId = String(payload.userId);
-            setOnlineUserIds((prev) => {
-              const next = new Set(prev);
-              if (payload.isOnline) next.add(targetUserId);
-              else next.delete(targetUserId);
-              return next;
-            });
-            setMembers((prev) => {
-              const exists = prev.some((m) => String(m.userId) === targetUserId);
-              if (!exists && payload.isOnline) {
-                refreshMembersRef.current();
-                return prev;
-              }
-              return prev.map((m) =>
-                String(m.userId) === targetUserId ? { ...m, isOnline: payload.isOnline } : m
-              );
-            });
-          };
-
-          const onPendingRotation = (payload: { roomId: string; version: number }) => {
-            if (payload.roomId !== roomId) return;
-            setRoomKeyRotation((prev) => ({
-              ...prev,
-              pendingKeyRotation: true,
-              lastKeyVersion: payload.version - 1,
-            }));
-            setStatus("Updating security...");
-            setIsRotating(true);
-          };
-
-          const onRotationComplete = async (payload: { roomId: string; version: number }) => {
-            if (payload.roomId !== roomId) return;
-            setRoomKeyRotation((prev) => ({
-              ...prev,
-              pendingKeyRotation: false,
-              lastKeyVersion: payload.version,
-              currentKeyVersion: payload.version,
-            }));
-            setStatus("Connected");
-            setIsRotating(false);
-            await flushRotationQueue(roomId, payload.version, encryptMessage, getRoomKeyVersion);
-          };
-
-          const onRotationFailed = (payload: { roomId: string; version: number; error: string }) => {
-            if (payload.roomId !== roomId) return;
-            setStatus("Key rotation failed: " + payload.error);
-            setIsRotating(false);
-          };
-
-          if (gsocket) {
-            gsocket.on("room_message", onRoomMessage);
-            gsocket.on("message_edited", onMessageEdited);
-            gsocket.on("message_deleted", onMessageDeleted);
-            gsocket.on("typing_started", onTypingStarted);
-            gsocket.on("typing_stopped", onTypingStopped);
-            gsocket.on("PRESENCE_UPDATED", onPresenceUpdated);
-            gsocket.on("PENDING_KEY_ROTATION", onPendingRotation);
-            gsocket.on("KEY_ROTATION_COMPLETE", onRotationComplete);
-            gsocket.on("KEY_ROTATION_FAILED", onRotationFailed);
-          }
-
-          // Store refs for cleanup
-          const handlerMap = new Map<string, (...args: any[]) => void>();
-          handlerMap.set("room_message", onRoomMessage as any);
-          handlerMap.set("message_edited", onMessageEdited as any);
-          handlerMap.set("message_deleted", onMessageDeleted as any);
-          handlerMap.set("typing_started", onTypingStarted as any);
-          handlerMap.set("typing_stopped", onTypingStopped as any);
-          handlerMap.set("PRESENCE_UPDATED", onPresenceUpdated as any);
-          handlerMap.set("PENDING_KEY_ROTATION", onPendingRotation as any);
-          handlerMap.set("KEY_ROTATION_COMPLETE", onRotationComplete as any);
-          handlerMap.set("KEY_ROTATION_FAILED", onRotationFailed as any);
-          handlerRef.current = handlerMap;
-
-        } else {
+        if (!USE_GLOBAL_SOCKET) {
           // ── Legacy per-room socket path ────────────────────────
 
         const rm = new ReconnectionManager(roomId, async () => {
@@ -1436,7 +1254,7 @@ export default function RoomChatPage() {
           console.warn("Failed to connect socket in background:", err);
         });
 
-        } // end else: legacy per-room path
+        } // end if (!USE_GLOBAL_SOCKET): legacy per-room path
 
         // Fetch members
         void fetch(`/api/rooms/${roomId}/members`, { credentials: "include" })
@@ -1493,33 +1311,9 @@ export default function RoomChatPage() {
       mounted = false;
 
       if (USE_GLOBAL_SOCKET) {
-        // Clean up wait-socket polling if still running
-        if (waitSocketRef.current) {
-          clearInterval(waitSocketRef.current);
-          waitSocketRef.current = null;
-        }
-
-        // Remove all 9 event handlers from global socket
-        const gs = getGlobalSocket();
-        if (gs && handlerRef.current) {
-          for (const [event, handler] of handlerRef.current) {
-            gs.off(event, handler);
-          }
-          handlerRef.current = null;
-        }
-
-        // Remove reconnect handler
-        if (gs && reconnectHandlerRef.current) {
-          gs.io.off("reconnect", reconnectHandlerRef.current);
-          reconnectHandlerRef.current = null;
-        }
-
-        // Emit viewing_room_stop
-        gs?.emit("viewing_room_stop", { roomId });
-
-        // Stop heartbeat
-        stopHeartbeat();
-        // DO NOT disconnect socket — it's global
+        // Global socket cleanup is handled by the separate useEffect.
+        // No handler removal, heartbeat kill, or viewing_room_stop here.
+        // Only clear stale refs from the bootstrap phase.
       } else {
         reconnectionRef.current?.stop();
         reconnectionRef.current = null;
@@ -1538,6 +1332,227 @@ export default function RoomChatPage() {
       setIsBootstrapping(true);
     };
   }, [roomId, appendDecrypted, runSync, scrollToBottom, roomKeyRotation.pendingKeyRotation]);
+
+  // ── Global socket event wiring (reactive to socket lifecycle) ────
+  useEffect(() => {
+    if (!USE_GLOBAL_SOCKET) return;
+    if (!gsSocket || !gsConnected || !roomId) return;
+
+    setStatus("Connected");
+    void clearUnread(roomId);
+    setGlobalActiveRoomId(roomId);
+    gsSocket.emit("viewing_room_start", { roomId });
+
+    const onReconnect = () => {
+      void runSync();
+      refreshMembersRef.current?.();
+      gsSocket.emit("viewing_room_start", { roomId });
+      void workerRef.current?.flushImmediate();
+    };
+    gsSocket.io.on("reconnect", onReconnect);
+
+    // ── Outbox retry worker ────────────────────────────────────────
+    const transmit = async (entry: OutboxEntry): Promise<"sent" | "failed" | "retry"> => {
+      try {
+        const roomKey = roomKeyRef.current ?? await getRoomKeyVersion(roomId, entry.roomKeyVersion);
+        if (!roomKey) return "retry";
+        const res = await sendEncryptedMessage({
+          roomId,
+          clientMessageId: entry.clientMessageId,
+          ciphertext: entry.ciphertext,
+          iv: entry.iv,
+          authTag: entry.authTag,
+          roomKeyVersion: entry.roomKeyVersion,
+          messageType: entry.messageType,
+          replyTo: entry.replyTo ?? undefined,
+        });
+        if (res.ok) {
+          if (res.message) {
+            const decryptedBody = await decryptMessage(res.message, roomKey);
+            reconcileOptimisticMessage(entry.clientMessageId, res.message, decryptedBody, currentUserId, setMessages);
+          }
+          return "sent";
+        }
+        if (entry.retryCount < entry.maxRetries) return "retry";
+        return "failed";
+      } catch {
+        return "retry";
+      }
+    };
+    const worker = new OutboxRetryWorker(roomId, transmit);
+    worker.start();
+    workerRef.current = worker;
+
+    const onRoomMessage = async (incoming: RealtimeRoomMessage) => {
+      if (incoming.roomId !== roomId) return;
+      if (incoming.senderId === currentUserId) {
+        const clientMsgId = incoming.clientMessageId;
+        if (clientMsgId) {
+          await deleteOutboxEntry(clientMsgId);
+          const roomKey = roomKeyRef.current;
+          let decryptedBody = "";
+          if (roomKey) { try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {} }
+          reconcileOptimisticMessage(clientMsgId, incoming, decryptedBody, currentUserId, setMessages);
+        } else {
+          const matched = await findOutboxEntryByCipherprint(roomId, incoming.ciphertext, incoming.iv);
+          if (matched) {
+            const roomKey = roomKeyRef.current;
+            let decryptedBody = matched.displayBody;
+            if (roomKey) { try { decryptedBody = await decryptMessage(incoming, roomKey); } catch {} }
+            await deleteOutboxEntry(matched.clientMessageId);
+            reconcileOptimisticMessage(matched.clientMessageId, incoming, decryptedBody, currentUserId, setMessages);
+          }
+        }
+      }
+      setNewMessagesCount((prev) => prev + 1);
+      await appendDecrypted([incoming], false);
+      await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
+    };
+
+    const onMessageEdited = async (incoming: RealtimeRoomMessage) => {
+      if (incoming.roomId !== roomId) return;
+      try {
+        const keyVersion = incoming.roomKeyVersion ?? 0;
+        const roomKey = await getRoomKeyVersion(roomId, keyVersion);
+        let body = "";
+        if (roomKey) { try { body = await decryptMessage(incoming, roomKey); } catch {} }
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === incoming.id
+              ? { ...m, body: body || m.body, editedAt: incoming.editedAt ?? null, editCount: incoming.editCount ?? 0, ciphertext: incoming.ciphertext }
+              : m
+          )
+        );
+      } catch {}
+    };
+
+    const onMessageDeleted = (payload: { roomId: string; messageId: string }) => {
+      if (payload.roomId !== roomId) return;
+      setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
+      void removeFromCache(roomId, payload.messageId);
+    };
+
+    const onTypingStarted = (payload: TypingEventPayload) => {
+      if (payload.roomId !== roomId) return;
+      setTypingUsers((prev) => prev.includes(payload.userId) ? prev : [...prev, payload.userId]);
+    };
+
+    const onTypingStopped = (payload: TypingEventPayload) => {
+      if (payload.roomId !== roomId) return;
+      setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
+    };
+
+    const onPresenceUpdated = (payload: { roomId: string; userId: string; isOnline: boolean }) => {
+      if (payload.roomId !== roomId) return;
+      const targetUserId = String(payload.userId);
+      setOnlineUserIds((prev) => {
+        const next = new Set(prev);
+        if (payload.isOnline) next.add(targetUserId);
+        else next.delete(targetUserId);
+        return next;
+      });
+      setMembers((prev) => {
+        const exists = prev.some((m) => String(m.userId) === targetUserId);
+        if (!exists && payload.isOnline) {
+          refreshMembersRef.current?.();
+          return prev;
+        }
+        return prev.map((m) =>
+          String(m.userId) === targetUserId ? { ...m, isOnline: payload.isOnline } : m
+        );
+      });
+    };
+
+    const onPendingRotation = (payload: { roomId: string; version: number }) => {
+      if (payload.roomId !== roomId) return;
+      setRoomKeyRotation((prev) => ({
+        ...prev,
+        pendingKeyRotation: true,
+        lastKeyVersion: payload.version - 1,
+      }));
+      setStatus("Updating security...");
+      setIsRotating(true);
+    };
+
+    const onRotationComplete = async (payload: { roomId: string; version: number }) => {
+      if (payload.roomId !== roomId) return;
+      setRoomKeyRotation((prev) => ({
+        ...prev,
+        pendingKeyRotation: false,
+        lastKeyVersion: payload.version,
+        currentKeyVersion: payload.version,
+      }));
+      setStatus("Connected");
+      setIsRotating(false);
+      await flushRotationQueue(roomId, payload.version, encryptMessage, getRoomKeyVersion);
+    };
+
+    const onRotationFailed = (payload: { roomId: string; version: number; error: string }) => {
+      if (payload.roomId !== roomId) return;
+      setStatus("Key rotation failed: " + payload.error);
+      setIsRotating(false);
+    };
+
+    const onRoomRenamed = (payload: { roomId: string; newName: string }) => {
+      if (payload.roomId !== roomId) return;
+      setRoomMeta((prev) => prev ? { ...prev, room: { ...prev.room, name: payload.newName } } : prev);
+    };
+
+    const onRoomDisabled = (payload: { roomId: string; isDisabled: boolean }) => {
+      if (payload.roomId !== roomId) return;
+      setRoomDisabled(payload.isDisabled);
+      if (payload.isDisabled) toast.error("This room has been disabled");
+    };
+
+    const onRoomUpdated = (payload: { roomId: string; name?: string; description?: string }) => {
+      if (payload.roomId !== roomId) return;
+      setRoomMeta((prev) =>
+        prev
+          ? {
+              ...prev,
+              room: {
+                ...prev.room,
+                name: payload.name ?? prev.room.name,
+                description: payload.description !== undefined ? payload.description : prev.room.description,
+              },
+            }
+          : prev
+      );
+    };
+
+    gsSocket.on("room_message", onRoomMessage);
+    gsSocket.on("message_edited", onMessageEdited);
+    gsSocket.on("message_deleted", onMessageDeleted);
+    gsSocket.on("typing_started", onTypingStarted);
+    gsSocket.on("typing_stopped", onTypingStopped);
+    gsSocket.on("PRESENCE_UPDATED", onPresenceUpdated);
+    gsSocket.on("PENDING_KEY_ROTATION", onPendingRotation);
+    gsSocket.on("KEY_ROTATION_COMPLETE", onRotationComplete);
+    gsSocket.on("KEY_ROTATION_FAILED", onRotationFailed);
+    gsSocket.on("room_renamed", onRoomRenamed);
+    gsSocket.on("room_updated", onRoomUpdated);
+    gsSocket.on("room_disabled", onRoomDisabled);
+
+    return () => {
+      gsSocket.off("room_message", onRoomMessage);
+      gsSocket.off("message_edited", onMessageEdited);
+      gsSocket.off("message_deleted", onMessageDeleted);
+      gsSocket.off("typing_started", onTypingStarted);
+      gsSocket.off("typing_stopped", onTypingStopped);
+      gsSocket.off("PRESENCE_UPDATED", onPresenceUpdated);
+      gsSocket.off("PENDING_KEY_ROTATION", onPendingRotation);
+      gsSocket.off("KEY_ROTATION_COMPLETE", onRotationComplete);
+      gsSocket.off("KEY_ROTATION_FAILED", onRotationFailed);
+      gsSocket.off("room_renamed", onRoomRenamed);
+      gsSocket.off("room_updated", onRoomUpdated);
+      gsSocket.off("room_disabled", onRoomDisabled);
+      gsSocket.io.off("reconnect", onReconnect);
+      worker.stop();
+      workerRef.current = null;
+      gsSocket.emit("viewing_room_stop", { roomId });
+      setGlobalActiveRoomId(null);
+    };
+  }, [gsSocket, gsConnected, roomId, currentUserId, runSync, clearUnread, appendDecrypted]);
 
   useEffect(() => {
     if (showRecoveryPrompt) openRecovery();
@@ -1741,7 +1756,7 @@ export default function RoomChatPage() {
         });
       }
     } catch (err) {
-      setToast(err instanceof Error ? err.message : "Failed to edit message");
+      toast.error(err instanceof Error ? err.message : "Failed to edit message");
     }
   }
 
@@ -1766,7 +1781,7 @@ export default function RoomChatPage() {
       if (!response.ok) throw new Error(response.error || "Delete failed");
       void removeFromCache(roomId, messageId);
     } catch (err) {
-      setToast(err instanceof Error ? err.message : "Failed to delete message");
+      toast.error(err instanceof Error ? err.message : "Failed to delete message");
     }
   }
 
@@ -1804,7 +1819,7 @@ export default function RoomChatPage() {
     const isVideo = isSupportedVideo(file);
 
     if (!isImage && !isVideo) {
-      alert("Unsupported file type. Only images and videos are allowed.");
+      toast.error("Unsupported file type. Only images and videos are allowed.");
       return;
     }
 
@@ -2095,6 +2110,31 @@ export default function RoomChatPage() {
     }
   }
 
+  async function handleEditRoomDetails(name: string, description: string) {
+    if (!roomId) return;
+    const res = await fetch(`/api/rooms/${roomId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, description }),
+      credentials: "include",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Failed to update room details");
+    setRoomMeta((prev) =>
+      prev
+        ? {
+            ...prev,
+            room: {
+              ...prev.room,
+              name: data.room.name ?? name,
+              description: data.room.description ?? description,
+            },
+          }
+        : prev
+    );
+    toast.success("Room details updated");
+  }
+
   async function onSendGif(gif: GifSelection) {
     if (!roomId) return;
     if (roomDisabled) return;
@@ -2130,7 +2170,7 @@ export default function RoomChatPage() {
 
       if (response.message) await appendDecrypted([response.message]);
     } catch (err) {
-      setToast(err instanceof Error ? err.message : "Failed to send GIF");
+      toast.error(err instanceof Error ? err.message : "Failed to send GIF");
     }
   }
 
@@ -2259,7 +2299,7 @@ export default function RoomChatPage() {
       // Successfully left — navigate away
       router.push("/");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to leave room");
+      toast.error(err instanceof Error ? err.message : "Failed to leave room");
     } finally {
       setLeaveLoading(false);
     }
@@ -2307,6 +2347,7 @@ export default function RoomChatPage() {
           <RoomOptionsPage
             roomId={roomId}
             roomName={roomMeta.room.name}
+            roomDescription={roomMeta.room.description}
             roomLink={roomMeta.room.roomLink}
             joinPolicy={roomMeta.room.joinPolicy}
             members={members as RoomMemberEntry[]}
@@ -2315,6 +2356,7 @@ export default function RoomChatPage() {
             isDisabled={roomDisabled}
             isAdmin={roomMeta.membership?.role === "OWNER" || roomMeta.membership?.role === "ADMIN"}
             onToggleDisable={isOwner ? handleToggleDisable : undefined}
+            onEditDetails={isOwner ? handleEditRoomDetails : undefined}
             onLeaveRequest={handleLeaveRequest}
             onKickout={handleKickout}
             onRoleChange={handleRoleChange}
@@ -2344,22 +2386,6 @@ export default function RoomChatPage() {
                     </Button>
                   </Link>
                 )}
-              </div>
-            )}
-
-            {/* ── Dismissable inline toast for non-blocking errors ── */}
-            {toast && (
-              <div className="pointer-events-none absolute bottom-24 left-0 right-0 z-50 flex justify-center px-4">
-                <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900/95 px-4 py-2.5 shadow-xl backdrop-blur-sm">
-                  <span className="text-[12px] text-neutral-300">{toast}</span>
-                  <button
-                    onClick={() => setToast(null)}
-                    className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-700 hover:text-neutral-200"
-                    aria-label="Dismiss"
-                  >
-                    ✕
-                  </button>
-                </div>
               </div>
             )}
 

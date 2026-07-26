@@ -128,6 +128,24 @@ export async function getEligibleRetryEntries(
   });
 }
 
+/** All non-FAILED, non-rotation-queued entries for a room — used by flushImmediate on reconnect. */
+export async function getAllPendingEntries(roomId: string): Promise<OutboxEntry[]> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OUTBOX_STORE, "readonly");
+    const store = tx.objectStore(OUTBOX_STORE);
+    const index = store.index("by-room");
+    const req = index.getAll(roomId);
+    req.onsuccess = () => {
+      const entries = (req.result as OutboxEntry[]).filter(
+        (e) => e.status !== "FAILED" && !e.isRotationQueued
+      );
+      resolve(entries);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export async function updateOutboxEntry(
   clientMessageId: string,
   updates: Partial<OutboxEntry>

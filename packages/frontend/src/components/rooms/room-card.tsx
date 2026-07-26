@@ -71,10 +71,9 @@ export function RoomCard({
               {room.name}
             </h3>
 
-            {/* Bold white typing... beside room name */}
             {isTyping && (
-              <span className="text-xs font-bold text-white animate-pulse shrink-0">
-                typing...
+              <span className="shrink-0 text-xs font-bold text-white animate-pulse">
+                {typingText || "typing..."}
               </span>
             )}
 
@@ -86,11 +85,7 @@ export function RoomCard({
           </div>
 
           {/* Message Preview / System Message / Description */}
-          {isTyping ? (
-            <p className="mt-1 text-xs font-bold text-white line-clamp-1 animate-pulse">
-              {typingText || "typing..."}
-            </p>
-          ) : lastSystemMessage ? (
+          {lastSystemMessage ? (
             <p className="mt-1 text-xs text-neutral-300 line-clamp-1 italic">
               {lastSystemMessage}
             </p>
@@ -133,13 +128,9 @@ export function RoomCard({
       {/* Footer section with online/total members display & Action Button */}
       <div className="mt-auto flex items-center justify-between gap-3 border-t border-neutral-900 pt-3">
         <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
           <Users size={14} className="text-neutral-500" />
           <span className="font-mono text-neutral-300 font-medium">
-            {onlineCount}/{memberCount}
+            {memberCount}
           </span>
         </div>
 

@@ -7,6 +7,7 @@ export const USE_GLOBAL_SOCKET = process.env.NEXT_PUBLIC_USE_GLOBAL_SOCKET == "t
 let socket: Socket | null = null;
 let globalSocket: Socket | null = null;
 let activeRoomId: string | null = null;
+let globalActiveRoomId: string | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const ACK_TIMEOUT_MS = 7_000;
 export { ACK_TIMEOUT_MS };
@@ -370,11 +371,15 @@ export function setGlobalSocket(s: Socket): void {
   globalSocket = s;
 }
 
-export function startGlobalHeartbeat(activeRoomId?: string | null): void {
+export function setGlobalActiveRoomId(roomId: string | null): void {
+  globalActiveRoomId = roomId;
+}
+
+export function startGlobalHeartbeat(): void {
   if (heartbeatInterval) return;
   heartbeatInterval = setInterval(() => {
     if (globalSocket?.connected) {
-      globalSocket.emit("heartbeat", { activeRoomId: activeRoomId ?? null });
+      globalSocket.emit("heartbeat", { activeRoomId: globalActiveRoomId });
     }
   }, HEARTBEAT_INTERVAL_MS);
 }

@@ -215,12 +215,15 @@ app.post("/internal/room-metadata-updated", (req:any, res:any) => {
     return;
   }
 
-  const { roomId, newName, isDisabled } = req.body ?? {};
+  const { roomId, newName, description, isDisabled } = req.body ?? {};
   if (!isNonEmptyString(roomId)) {
     res.status(400).json({ error: "roomId required" });
     return;
   }
 
+  if (isNonEmptyString(newName) || typeof description === "string") {
+    io.to(`room:${roomId}`).emit("room_updated", { roomId, name: newName, description });
+  }
   if (isNonEmptyString(newName)) {
     io.to(`room:${roomId}`).emit("room_renamed", { roomId, newName });
   }
@@ -404,7 +407,7 @@ io.on("connection", async (socket: AuthedSocket) => {
   socket.on("viewing_room_start", async (payload: { roomId?: string }) => {
     const roomId = payload?.roomId;
     if (!roomId) return;
-    socket.data.roomId = roomId;
+    socket.data.viewingRoomId = roomId;
     presence.connect(roomId, socket.data.userId);
     presence.viewingConnect(roomId, socket.data.userId);
     io.to(`room:${roomId}`).emit("PRESENCE_UPDATED", {
@@ -419,7 +422,7 @@ io.on("connection", async (socket: AuthedSocket) => {
   });
 
   socket.on("viewing_room_stop", async (payload: { roomId?: string }) => {
-    const roomId = payload?.roomId || socket.data.roomId;
+    const roomId = payload?.roomId || socket.data.viewingRoomId;
     if (!roomId) return;
     presence.viewingDisconnect(roomId, socket.data.userId);
     const remaining = presence.disconnect(roomId, socket.data.userId);
@@ -433,8 +436,8 @@ io.on("connection", async (socket: AuthedSocket) => {
       roomId,
       userId: socket.data.userId,
     });
-    if (socket.data.roomId === roomId) {
-      socket.data.roomId = undefined;
+    if (socket.data.viewingRoomId === roomId) {
+      socket.data.viewingRoomId = undefined;
     }
   });
 
@@ -464,7 +467,7 @@ io.on("connection", async (socket: AuthedSocket) => {
 
     if (isGlobalSocket) {
       // Global socket: don't leave Socket.IO room, just clear viewing state
-      socket.data.roomId = undefined;
+      socket.data.viewingRoomId = undefined;
     } else {
       // Per-room socket: actually leave the room
       await socket.leave(`room:${roomId}`);
@@ -650,7 +653,7 @@ io.on("connection", async (socket: AuthedSocket) => {
         for (const sRaw of roomSockets) {
           const s = sRaw as any;
           if (s.data.userId === socket.data.userId) continue;           // skip sender
-          if (s.data.roomId === roomId) continue;                       // skip viewers
+          if (s.data.viewingRoomId === roomId) continue;                // skip viewers
           io.to(`user:${s.data.userId}`).emit("user_unread_increment", {
             roomId,
             senderId: socket.data.userId,
@@ -1033,7 +1036,7 @@ io.on("connection", async (socket: AuthedSocket) => {
       });
 
       // Notify room that user stopped viewing (if they were viewing)
-      if (socket.data.roomId === roomId) {
+      if (socket.data.viewingRoomId === roomId) {
         io.to(`room:${roomId}`).emit("viewing_room_stop", {
           roomId,
           userId,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -8,6 +8,7 @@ import { requestJoinRoom } from "@/lib/room-membership-client";
 import { RoomCard, type DiscoveryRoom } from "./room-card";
 import { CreateRoomModal, FabCreateRoom } from "./create-room-modal";
 import { TrendingTags } from "@/components/trending-tags";
+
 
 import { generateUserKeyPair, exportPublicKey, savePrivateKey } from "@/lib/crypto";
 
@@ -147,9 +148,24 @@ export function RoomDiscovery() {
   const [profile, setProfile] = useState<MeProfile | null>(null);
   const [isGeneratingKeys, setIsGeneratingKeys] = useState(false);
 
-  const { counts } = useUnreadStore();
+  const { counts, timestamps } = useUnreadStore();
   const { socket } = useGlobalSocket();
   const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
+
+  const sortedRooms = useMemo(() => {
+    return rooms.slice().sort((a, b) => {
+      const idA = a.id ?? a._id?.toString() ?? "";
+      const idB = b.id ?? b._id?.toString() ?? "";
+      const tsA = timestamps[idA] ?? 0;
+      const tsB = timestamps[idB] ?? 0;
+      if (tsA !== tsB) {
+        return tsB - tsA;
+      }
+      const unreadA = counts[idA] ?? 0;
+      const unreadB = counts[idB] ?? 0;
+      return unreadB - unreadA;
+    });
+  }, [rooms, counts, timestamps]);
 
   useEffect(() => {
     if (!socket) return;
@@ -370,7 +386,7 @@ export function RoomDiscovery() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((room) => {
+            {sortedRooms.map((room:any) => {
               const rId = room.id ?? room._id?.toString() ?? "";
               const unread = counts[rId] ?? 0;
               const isTyping = Boolean(typingMap[rId]);

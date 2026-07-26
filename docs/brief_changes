@@ -1,0 +1,94 @@
+# Sort Rooms by Unread & Timestamp, Room Card Updates, Room Meta WS Wiring, and Toast Adjustments
+
+This implementation plan details the changes required to:
+1. Store `latestMessageTimeStamp` in IndexedDB along with unread counts and sort rooms across all tabs (`JoinedRoomsPage`, `RoomDiscovery`) primary by unread count and secondarily by timestamp.
+2. Update `RoomCard` to display the typing indicator exclusively beside the room name (removing duplicate typing indicators).
+3. Rearrange `RoomOptionsPage`: move the Disable Room button to the bottom alongside Leave Room, and add an "Edit Details" button at the top to allow updating room name and description.
+4. Emit and capture global WebSocket events (`room_updated`) for room metadata changes so all clients update room details in real time.
+5. Silence socket reconnection/reconnected toast notifications and set the global `<Toaster>` position to `top-center`.
+
+## User Review Required
+
+> [!IMPORTANT]
+> - `latestMessageTimeStamp` will be stored in IndexedDB under the existing `unread-counts` store object schema `{ roomId, count, latestMessageTimeStamp }`.
+> - Reconnection toasts (`Connection lost. Reconnecting...` / `Reconnected`) will be removed for silent background reconnection.
+> - Toast notification container position will be shifted from `bottom-right` to `top-center` across the entire application.
+
+## Open Questions
+
+None.
+
+## Proposed Changes
+
+---
+
+### Frontend Infrastructure & Unread Store
+
+#### [MODIFY] [unread-store.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/lib/unread-store.ts)
+- Extend `writeUnread` and `useUnreadStore` to include `latestMessageTimeStamp` (number timestamp).
+- Maintain `timestamps: Record<string, number>` in Zustand state alongside `counts`.
+- Hydrate `timestamps` in `loadFromDB()`.
+- Update `increment` and `set` methods to accept an optional `timestamp` argument (defaulting to `Date.now()`).
+
+#### [MODIFY] [global-socket-context.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/lib/global-socket-context.tsx)
+- Remove `toast.error("Connection lost. Reconnecting...", ...)` and `toast.success("Reconnected", ...)` from socket lifecycle handlers.
+- Pass `payload.createdAt` / `timestamp` to `increment` when handling `user_unread_increment`.
+- Listen for `room_updated` / `room_renamed` socket events to trigger SWR revalidation `mutate((k) => typeof k === "string" && k.startsWith("/api/rooms"))`.
+
+---
+
+### Layout & Toast Notification
+
+#### [MODIFY] [layout.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/layout.tsx)
+- Change `<Toaster theme="dark" position="bottom-right" />` to `<Toaster theme="dark" position="top-center" />`.
+
+---
+
+### Room Card Component
+
+#### [MODIFY] [room-card.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/components/rooms/room-card.tsx)
+- Render `{isTyping && <span className="text-xs font-bold text-white shrink-0 animate-pulse">typing...</span>}` inside the room title header flex container, immediately beside the room name.
+- Remove the typing indicator from the message preview paragraph and footer section.
+
+---
+
+### Room Sorting in Tabs
+
+#### [MODIFY] [joined/page.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/rooms/joined/page.tsx)
+- Sort rooms prior to rendering: first by `unreadCount` descending, then by `latestMessageTimeStamp` descending.
+
+#### [MODIFY] [room-discovery.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/components/rooms/room-discovery.tsx)
+- Sort discovered rooms: first by `unreadCount` descending, then by `latestMessageTimeStamp` descending.
+
+---
+
+### Room Metadata Editing & Options Layout
+
+#### [NEW] [route.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/api/rooms/[roomId]/route.ts)
+- Add `PATCH` handler to allow room owners/admins to update room `name` and `description`.
+- Call `notifyRoomMetadata` to notify WebSocket server of room metadata changes.
+
+#### [MODIFY] [index.ts](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/websocket-server/src/index.ts)
+- In `/internal/room-metadata-updated`, emit `room_updated` event to `room:${roomId}` with updated `{ roomId, name, description, isDisabled }`.
+
+#### [MODIFY] [room-options-page.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/components/chat/room-settings/room-options-page.tsx)
+- Add "Edit Details" button just above the room header section in the Options tab (for OWNER and ADMIN).
+- Provide an inline modal/form to edit room name and description, calling `PATCH /api/rooms/${roomId}` upon submission.
+- Move the "Disable Room" / "Restore Room" button to the bottom of the Options tab, above/alongside the "Leave Room" button.
+
+#### [MODIFY] [page.tsx](file:///c:/Users/REYANSH/OneDrive/Desktop/DeChat/packages/frontend/src/app/rooms/[roomId]/page.tsx)
+- Listen for `room_updated` socket event to update room metadata (`roomMeta.room.name`, `roomMeta.room.description`) live.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Build verification via `npm run build` or Next.js typechecking.
+
+### Manual Verification
+- Test unread count & timestamp sorting in Joined Rooms and All Rooms tabs by receiving messages across multiple rooms.
+- Verify typing indicator position beside room name in `RoomCard`.
+- Verify toast notifications appear at top-center and socket reconnection triggers silently without toast alerts.
+- Click "Edit Details" in Room Options to update room name and description; verify live update across browser windows via WebSockets.
+- Verify Disable Room button is positioned at the bottom of the Options tab.

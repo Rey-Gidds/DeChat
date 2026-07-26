@@ -9,6 +9,7 @@
 import {
   type OutboxEntry,
   getEligibleRetryEntries,
+  getAllPendingEntries,
   updateOutboxEntry,
   deleteOutboxEntry,
   getRotationQueuedEntries,
@@ -191,10 +192,18 @@ export class OutboxRetryWorker {
   }
 
   /**
-   * Called immediately when socket reconnects — skips the 2s poll delay.
+   * Called immediately when socket reconnects — skips the 2s poll delay
+   * and flushes ALL pending entries regardless of nextRetryAt schedule.
    */
   async flushImmediate(): Promise<void> {
-    await this.tick();
+    const eligible = await getAllPendingEntries(this.roomId);
+    for (const entry of eligible) {
+      if (this.inFlight.has(entry.clientMessageId)) continue;
+      this.inFlight.add(entry.clientMessageId);
+      void this.attempt(entry).finally(() => {
+        this.inFlight.delete(entry.clientMessageId);
+      });
+    }
   }
 
   private async tick(): Promise<void> {

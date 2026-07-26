@@ -13,6 +13,7 @@ import type { Socket } from "socket.io-client";
 import { useUnreadStore } from "@/lib/unread-store";
 import { useSWRConfig } from "swr";
 import { connectAsUser } from "@/lib/socket-client";
+import { toast } from "sonner";
 
 interface GlobalSocketContextValue {
   socket: Socket | null;
@@ -89,7 +90,15 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
         });
 
         s.on("disconnect", () => {
-          if (mountedRef.current) setConnected(false);
+          if (mountedRef.current) {
+            setConnected(false);
+          }
+        });
+
+        s.io.on("reconnect_failed", () => {
+          if (mountedRef.current) {
+            toast.error("Could not reconnect. Check your internet.", { id: "global-socket", duration: Infinity });
+          }
         });
       } catch (err) {
         console.warn("[GlobalSocket] connect failed:", err);
@@ -108,37 +117,40 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
     const s = getGlobalSocket();
     if (!s) return;
 
-    const onUnreadIncrement = (p: { roomId: string }) => {
-      void increment(p.roomId);
+    const onUnreadIncrement = (p: { roomId: string; createdAt?: string | number }) => {
+      const ts = p.createdAt ? new Date(p.createdAt).getTime() : undefined;
+      void increment(p.roomId, ts);
       revalidateRooms(globalMutate);
     };
 
-    const onMemberKicked = (p: { roomId: string }) => {
+    const onMemberKicked = (p: { roomId: string; roomName?: string }) => {
+      void clearUnread(p.roomId);
+      revalidateRooms(globalMutate);
+      toast.error(`You were removed from ${p.roomName || "a room"}`);
+    };
+
+    const onMemberLeft = (p: { roomId: string; roomName?: string }) => {
       void clearUnread(p.roomId);
       revalidateRooms(globalMutate);
     };
 
-    const onMemberLeft = (p: { roomId: string }) => {
-      void clearUnread(p.roomId);
-      revalidateRooms(globalMutate);
-    };
-
-    const onMemberJoined = (p: { roomId: string }) => {
-      // Subscribe to the new room on the global socket
+    const onMemberJoined = (p: { roomId: string; roomName?: string }) => {
       void emitSubscribeRoom(s, p.roomId).catch((err) =>
         console.warn("[GlobalSocket] subscribe_room on join failed:", err)
       );
       revalidateRooms(globalMutate);
     };
 
-    const onRoomDeleted = (p: { roomId: string }) => {
+    const onRoomDeleted = (p: { roomId: string; roomName?: string }) => {
       void clearUnread(p.roomId);
       revalidateRooms(globalMutate);
+      toast.error(`${p.roomName || "A room"} has been deleted`);
     };
 
     const onMembershipUpdated = () => revalidateRooms(globalMutate);
     const onRequestApproved = () => revalidateRooms(globalMutate);
     const onRequestRejected = () => revalidateRooms(globalMutate);
+    const onRoomUpdated = () => revalidateRooms(globalMutate);
 
     s.on("user_unread_increment", onUnreadIncrement);
     s.on("room_member_kicked", onMemberKicked);
@@ -148,6 +160,8 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
     s.on("membership_updated", onMembershipUpdated);
     s.on("REQUEST_APPROVED", onRequestApproved);
     s.on("REQUEST_REJECTED", onRequestRejected);
+    s.on("room_updated", onRoomUpdated);
+    s.on("room_renamed", onRoomUpdated);
 
     return () => {
       s.off("user_unread_increment", onUnreadIncrement);
@@ -158,6 +172,8 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
       s.off("membership_updated", onMembershipUpdated);
       s.off("REQUEST_APPROVED", onRequestApproved);
       s.off("REQUEST_REJECTED", onRequestRejected);
+      s.off("room_updated", onRoomUpdated);
+      s.off("room_renamed", onRoomUpdated);
     };
   }, [socketState]);
 
@@ -165,7 +181,7 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!socketState || !connected) return;
-    startGlobalHeartbeat(null);
+    startGlobalHeartbeat();
     return () => stopHeartbeat();
   }, [socketState, connected]);
 

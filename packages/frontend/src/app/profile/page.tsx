@@ -10,6 +10,7 @@ import { getPrivateKey } from "@/lib/crypto";
 import Link from "next/link";
 import { format } from "date-fns";
 import { useUser, useMyRooms } from "@/hooks/use-swr-hooks";
+import { toast } from "sonner";
 
 interface UserProfile {
   id: string;
@@ -85,6 +86,7 @@ export default function ProfilePage() {
     setNameError("");
     try {
       await updateProfileName(trimmed);
+      toast.success("Name updated");
       setEditingName(false);
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "Failed to update name");
@@ -125,6 +127,7 @@ export default function ProfilePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to upload picture");
+      toast.success("Profile picture updated");
       await mutateUser();
     } catch (err) {
       setPfpError(err instanceof Error ? err.message : "Failed to upload picture");
@@ -142,6 +145,7 @@ export default function ProfilePage() {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to remove picture");
+      toast.success("Profile picture removed");
       await mutateUser();
     } catch (err) {
       setPfpError(err instanceof Error ? err.message : "Failed to remove picture");

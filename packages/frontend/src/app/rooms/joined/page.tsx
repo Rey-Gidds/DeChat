@@ -12,8 +12,19 @@ export default function JoinedRoomsPage() {
   const { data: session, isPending } = useSession();
   const { memberships: rooms, isLoading, error: swrError, mutateMyRooms } = useMyRooms("APPROVED");
   const { socket } = useGlobalSocket();
-  const { counts, increment, clear: clearUnread } = useUnreadStore();
+  const { counts, timestamps, clear: clearUnread } = useUnreadStore();
   const [typingMap, setTypingMap] = useState<Record<string, boolean>>({});
+
+  const sortedRooms = (rooms || []).slice().sort((a, b) => {
+    const tsA = timestamps[a.roomId] ?? 0;
+    const tsB = timestamps[b.roomId] ?? 0;
+    if (tsA !== tsB) {
+      return tsB - tsA;
+    }
+    const unreadA = counts[a.roomId] ?? 0;
+    const unreadB = counts[b.roomId] ?? 0;
+    return unreadB - unreadA;
+  });
 
   // ── Global socket event listeners ───────────────────────────
 
@@ -23,11 +34,6 @@ export default function JoinedRoomsPage() {
 
   useEffect(() => {
     if (!socket) return;
-
-    const onUnreadIncrement = (payload: { roomId: string }) => {
-      void increment(payload.roomId);
-      revalidate();
-    };
 
     const onRoomDeleted = (payload: { roomId: string }) => {
       void clearUnread(payload.roomId);
@@ -58,7 +64,6 @@ export default function JoinedRoomsPage() {
       setTypingMap((prev) => ({ ...prev, [payload.roomId]: false }));
     };
 
-    socket.on("user_unread_increment", onUnreadIncrement);
     socket.on("room_deleted", onRoomDeleted);
     socket.on("room_member_kicked", onMemberKicked);
     socket.on("room_member_left", onMemberLeft);
@@ -67,7 +72,6 @@ export default function JoinedRoomsPage() {
     socket.on("typing_stopped", onTypingStopped);
 
     return () => {
-      socket.off("user_unread_increment", onUnreadIncrement);
       socket.off("room_deleted", onRoomDeleted);
       socket.off("room_member_kicked", onMemberKicked);
       socket.off("room_member_left", onMemberLeft);
@@ -75,7 +79,7 @@ export default function JoinedRoomsPage() {
       socket.off("typing_started", onTypingStarted);
       socket.off("typing_stopped", onTypingStopped);
     };
-  }, [socket, revalidate, increment, clearUnread]);
+  }, [socket, revalidate, clearUnread]);
 
   if (isPending) {
     return (
@@ -120,7 +124,7 @@ export default function JoinedRoomsPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {rooms.map((r) => {
+          {sortedRooms.map((r) => {
             const unread = counts[r.roomId] ?? 0;
             const isTyping = Boolean(typingMap[r.roomId]);
             return (

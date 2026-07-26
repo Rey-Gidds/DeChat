@@ -9,6 +9,7 @@ export type AuthedSocket = Socket & {
   data: {
     userId: string;
     roomId?: string;
+    viewingRoomId?: string;
     subscribedRooms: Set<string>;
     membershipCache: Map<string, MembershipCacheEntry>;
   };

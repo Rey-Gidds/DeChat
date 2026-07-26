@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css"
 import { AppShell } from "@/components/layout/app-shell";
 import { Providers } from "@/components/providers";
+import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
   title: "DeChat | Privacy-First Realtime Chat",
@@ -44,6 +45,7 @@ export default function RootLayout({
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>
+        <Toaster theme="dark" position="top-center" />
       </body>
     </html>
   );

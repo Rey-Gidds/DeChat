@@ -51,8 +51,8 @@ export class SubscriptionManager {
     if (!socket.data.subscribedRooms.has(roomId)) return;
     await socket.leave(`room:${roomId}`);
     socket.data.subscribedRooms.delete(roomId);
-    if (socket.data.roomId === roomId) {
-      socket.data.roomId = undefined;
+    if (socket.data.viewingRoomId === roomId) {
+      socket.data.viewingRoomId = undefined;
     }
   }
 
@@ -69,8 +69,8 @@ export class SubscriptionManager {
         if (s.data?.subscribedRooms?.has(roomId)) {
           s.leave?.(`room:${roomId}`);
           s.data.subscribedRooms.delete(roomId);
-          if (s.data.roomId === roomId) {
-            s.data.roomId = undefined;
+          if (s.data.viewingRoomId === roomId) {
+            s.data.viewingRoomId = undefined;
           }
         }
       })
@@ -89,8 +89,8 @@ export class SubscriptionManager {
         if (s.data?.subscribedRooms?.has(roomId)) {
           s.leave?.(`room:${roomId}`);
           s.data.subscribedRooms.delete(roomId);
-          if (s.data.roomId === roomId) {
-            s.data.roomId = undefined;
+          if (s.data.viewingRoomId === roomId) {
+            s.data.viewingRoomId = undefined;
           }
         }
       })

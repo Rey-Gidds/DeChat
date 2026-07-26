@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Copy, Check, Link2 } from "lucide-react";
 import { DebounceSearch } from "./debounce-search";
+import { toast } from "sonner";
 import { MemberActionDialog, type ActionMember } from "./member-action-dialog";
 import { approveJoinRequest } from "@/lib/room-membership-client";
 import { Avatar } from "../avatar";
@@ -28,6 +29,7 @@ interface JoinRequest {
 interface RoomOptionsPageProps {
   roomId: string;
   roomName: string;
+  roomDescription?: string;
   roomLink: string;
   joinPolicy?: string;
   members: RoomMemberEntry[];
@@ -36,6 +38,7 @@ interface RoomOptionsPageProps {
   isDisabled: boolean;
   isAdmin: boolean;
   onToggleDisable?: () => void;
+  onEditDetails?: (name: string, description: string) => Promise<void>;
   onLeaveRequest: () => void;
   onKickout: (userId: string) => Promise<void>;
   onRoleChange: (userId: string, role: string) => Promise<void>;
@@ -74,6 +77,7 @@ function useCopyLink(url: string) {
 export function RoomOptionsPage({
   roomId,
   roomName,
+  roomDescription,
   roomLink,
   joinPolicy,
   members,
@@ -82,6 +86,7 @@ export function RoomOptionsPage({
   isDisabled,
   isAdmin,
   onToggleDisable,
+  onEditDetails,
   onLeaveRequest,
   onKickout,
   onRoleChange,
@@ -91,6 +96,12 @@ export function RoomOptionsPage({
   const [memberQuery, setMemberQuery] = useState("");
   const [actionTarget, setActionTarget] = useState<RoomMemberEntry | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Edit details state
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editName, setEditName] = useState(roomName);
+  const [editDescription, setEditDescription] = useState(roomDescription || "");
+  const [savingDetails, setSavingDetails] = useState(false);
 
   // Join requests state
   const [requests, setRequests] = useState<JoinRequest[]>([]);
@@ -143,7 +154,7 @@ export function RoomOptionsPage({
       setRequests((prev) => prev.filter((r) => r.userId !== req.userId));
       onMembersRefresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Approval failed");
+      toast.error(err instanceof Error ? err.message : "Approval failed");
     } finally {
       setProcessingId(null);
     }
@@ -158,7 +169,7 @@ export function RoomOptionsPage({
       });
       setRequests((prev) => prev.filter((r) => r.userId !== targetUserId));
     } catch {
-      alert("Rejection failed");
+      toast.error("Rejection failed");
     } finally {
       setProcessingId(null);
     }
@@ -173,7 +184,7 @@ export function RoomOptionsPage({
       if (!res.ok) throw new Error(data?.error || "Batch reject failed");
       setRequests([]);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Batch reject failed");
+      toast.error(err instanceof Error ? err.message : "Batch reject failed");
     } finally {
       setRejectAllLoading(false);
     }
@@ -193,7 +204,7 @@ export function RoomOptionsPage({
       setActionTarget(null);
       onMembersRefresh();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Action failed");
+      toast.error(err instanceof Error ? err.message : "Action failed");
     } finally {
       setActionLoading(false);
     }
@@ -206,7 +217,7 @@ export function RoomOptionsPage({
   ];
 
   return (
-    <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+    <div className="flex flex-1 flex-col min-h-0 overflow-hidden relative">
       {/* Tab bar */}
       <div className="flex shrink-0 border-b border-neutral-800">
         {tabs.map((t) => (
@@ -229,6 +240,9 @@ export function RoomOptionsPage({
           <div className="border-b border-neutral-900 p-4">
             <p className="text-[10px] uppercase tracking-wider text-neutral-500">Room</p>
             <p className="mt-1 text-sm font-semibold text-white">{roomName}</p>
+            {roomDescription && (
+              <p className="mt-1 text-xs text-neutral-400 leading-relaxed">{roomDescription}</p>
+            )}
           </div>
 
           {/* Copy invite link */}
@@ -250,14 +264,30 @@ export function RoomOptionsPage({
             {copied && <p className="mt-1 text-[10px] text-neutral-500">Link copied!</p>}
           </div>
 
-          {/* Disable / Restore room — Owner only */}
-          {viewerRole === "OWNER" && onToggleDisable && (
-            <div className="border-b border-neutral-900 p-4">
-              <p className="mb-2 text-[10px] uppercase tracking-wider text-neutral-500">Room Status</p>
+          {/* Spacer to push stacked action buttons to bottom */}
+          <div className="flex-1 min-h-[20px]" />
+
+          {/* Stacked bottom buttons: Edit Details, Disable / Restore Room, Leave Room */}
+          <div className="p-4 flex flex-col gap-2.5 border-t border-neutral-900">
+            {isAdmin && onEditDetails && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditName(roomName);
+                  setEditDescription(roomDescription || "");
+                  setIsEditOpen(true);
+                }}
+                className="w-full border border-neutral-700 bg-neutral-900 py-2.5 text-xs font-medium uppercase tracking-wider text-white transition hover:border-neutral-500 hover:bg-neutral-800"
+              >
+                Edit Details
+              </button>
+            )}
+
+            {viewerRole === "OWNER" && onToggleDisable && (
               <button
                 type="button"
                 onClick={onToggleDisable}
-                className={`flex w-full items-center justify-center gap-2 border py-2.5 text-xs uppercase tracking-wider transition ${
+                className={`w-full border py-2.5 text-xs uppercase tracking-wider transition ${
                   isDisabled
                     ? "border-green-500/30 text-green-400 hover:border-green-500/60 hover:bg-green-950/20"
                     : "border-red-500/30 text-red-400 hover:border-red-500/60 hover:bg-red-950/20"
@@ -265,24 +295,78 @@ export function RoomOptionsPage({
               >
                 {isDisabled ? "Restore Room" : "Disable Room"}
               </button>
-            </div>
-          )}
+            )}
 
-          {/* Spacer to push leave to bottom */}
-          <div className="flex-1" />
-
-          {/* Leave room — not shown to OWNER */}
-          {viewerRole !== "OWNER" && (
-            <div className="p-4">
+            {viewerRole !== "OWNER" && (
               <button
                 type="button"
                 onClick={onLeaveRequest}
-                className="w-full border border-red-500/40 bg-red-950/30 py-3 text-sm font-medium uppercase tracking-wider text-red-400 transition hover:bg-red-950/60"
+                className="w-full border border-red-500/40 bg-red-950/30 py-2.5 text-xs font-medium uppercase tracking-wider text-red-400 transition hover:bg-red-950/60"
               >
                 Leave Room
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Details Modal */}
+      {isEditOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md border border-neutral-800 bg-neutral-950 p-6 shadow-2xl">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-white">Edit Room Details</h3>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-neutral-400">Room Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="mt-1 w-full border border-neutral-800 bg-black px-3 py-2 text-xs text-white focus:border-neutral-500 focus:outline-none"
+                  placeholder="Enter room name"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-wider text-neutral-400">Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full border border-neutral-800 bg-black px-3 py-2 text-xs text-white focus:border-neutral-500 focus:outline-none resize-none"
+                  placeholder="Enter room description"
+                />
+              </div>
             </div>
-          )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(false)}
+                disabled={savingDetails}
+                className="px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingDetails || !editName.trim()}
+                onClick={async () => {
+                  if (!onEditDetails) return;
+                  setSavingDetails(true);
+                  try {
+                    await onEditDetails(editName.trim(), editDescription.trim());
+                    setIsEditOpen(false);
+                  } catch {
+                    toast.error("Failed to update room details");
+                  } finally {
+                    setSavingDetails(false);
+                  }
+                }}
+                className="border border-white bg-white px-4 py-2 text-xs uppercase tracking-wider text-black font-semibold hover:bg-neutral-200 disabled:opacity-50"
+              >
+                {savingDetails ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
