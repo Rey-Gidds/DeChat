@@ -323,8 +323,12 @@ io.on("connection", async (socket: AuthedSocket) => {
   // ── Global socket: bulk subscribe to all approved rooms ────────────
   const isGlobalSocket = !socket.data.roomId;
   if (isGlobalSocket) {
-    const subCount = await subscriptionManager.initializeSubscriptions(socket);
-    console.log(`[socket ${socket.id}] Global socket: subscribed to ${subCount} rooms`);
+    try {
+      const subCount = await subscriptionManager.initializeSubscriptions(socket);
+      console.log(`[socket ${socket.id}] Global socket: subscribed to ${subCount} rooms`);
+    } catch (err) {
+      console.error(`[socket ${socket.id}] initializeSubscriptions failed:`, err);
+    }
   }
 
   // ── watch_room_membership ─────────────────────────────────────────
@@ -407,6 +411,26 @@ io.on("connection", async (socket: AuthedSocket) => {
   socket.on("viewing_room_start", async (payload: { roomId?: string }) => {
     const roomId = payload?.roomId;
     if (!roomId) return;
+
+    try {
+      const member = await checkMembership(socket, roomId);
+      if (!member) return;
+    } catch (err) {
+      console.error(`[socket ${socket.id}] checkMembership failed in viewing_room_start:`, err);
+      return;
+    }
+
+    // Ensure the socket is actually joined to the room channel
+    if (!socket.data.subscribedRooms.has(roomId)) {
+      try {
+        await socket.join(`room:${roomId}`);
+        socket.data.subscribedRooms.add(roomId);
+        console.log(`[socket ${socket.id}] Late-subscribed to room ${roomId} via viewing_room_start`);
+      } catch (err) {
+        console.error(`[socket ${socket.id}] Failed to join room ${roomId}:`, err);
+      }
+    }
+
     socket.data.viewingRoomId = roomId;
     presence.connect(roomId, socket.data.userId);
     presence.viewingConnect(roomId, socket.data.userId);

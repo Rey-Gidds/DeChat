@@ -31,7 +31,10 @@ async function batchJoin(
 export class SubscriptionManager {
   async initializeSubscriptions(socket: AuthedSocket): Promise<number> {
     const roomIds = await getApprovedMemberships(socket.data.userId);
-    return batchJoin(socket, roomIds);
+    console.log(`[subscription-manager] User ${socket.data.userId} has ${roomIds.length} approved memberships`);
+    const joined = await batchJoin(socket, roomIds);
+    console.log(`[subscription-manager] User ${socket.data.userId} joined ${joined} rooms (${roomIds.length} total)`);
+    return joined;
   }
 
   async subscribeRoom(
