@@ -60,6 +60,32 @@ export interface TypingEventPayload {
   preview?: string;
 }
 
+export interface TypingExpiredPayload {
+  roomId: string;
+  userId: string;
+}
+
+export interface TypingSnapshotPayload {
+  roomId: string;
+  users: { userId: string; preview?: string }[];
+}
+
+export interface UnreadIncrementPayload {
+  roomId: string;
+  unreadCount: number;
+  version: number;
+  senderId?: string;
+  senderName?: string;
+  messageType?: string;
+  createdAt?: string | number;
+}
+
+export interface UnreadCountUpdatedPayload {
+  roomId: string;
+  unreadCount: number;
+  version: number;
+}
+
 export interface KeyRotationPayload {
   roomId: string;
   version: number;
@@ -291,12 +317,46 @@ export async function syncGlobalSince(
   );
 }
 
-export async function emitGlobalTypingStart(roomId: string, preview?: string) {
-  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing_start", { roomId, preview });
+export async function emitTyping(roomId: string, preview?: string) {
+  return emitWithAck<{ ok: boolean; error?: string }>("typing", { roomId, preview });
 }
 
-export async function emitGlobalTypingStop(roomId: string) {
-  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing_stop", { roomId });
+export async function emitGlobalTyping(roomId: string, preview?: string) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing", { roomId, preview });
+}
+
+/** @deprecated Use emitTyping instead. Kept for backward compat — delegates to typing event. */
+export async function emitTypingStart(roomId: string, preview?: string) {
+  return emitWithAck<{ ok: boolean; error?: string }>("typing", { roomId, preview });
+}
+
+/** @deprecated No-op — typing lease expiry handles stopping. Kept for backward compat. */
+export async function emitTypingStop(_roomId: string) {
+  return Promise.resolve({ ok: true });
+}
+
+/** @deprecated Use emitGlobalTyping instead. */
+export async function emitGlobalTypingStart(roomId: string, preview?: string) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string }>("typing", { roomId, preview });
+}
+
+/** @deprecated No-op — typing lease expiry handles stopping. */
+export async function emitGlobalTypingStop(_roomId: string) {
+  return Promise.resolve({ ok: true });
+}
+
+export async function emitMarkAsRead(roomId: string, version: number) {
+  return emitWithAck<{ ok: boolean; error?: string; conflict?: boolean; unreadCount?: number; version?: number }>(
+    "mark_as_read",
+    { roomId, version }
+  );
+}
+
+export async function emitGlobalMarkAsRead(roomId: string, version: number) {
+  return emitWithGlobalAck<{ ok: boolean; error?: string; conflict?: boolean; unreadCount?: number; version?: number }>(
+    "mark_as_read",
+    { roomId, version }
+  );
 }
 
 export async function editGlobalEncryptedMessage(payload: OutboundEditMessage) {
@@ -326,14 +386,6 @@ export async function syncSince(
     "sync_since",
     { roomId, since, sinceId }
   );
-}
-
-export async function emitTypingStart(roomId: string, preview?: string) {
-  return emitWithAck<{ ok: boolean; error?: string }>("typing_start", { roomId, preview });
-}
-
-export async function emitTypingStop(roomId: string) {
-  return emitWithAck<{ ok: boolean; error?: string }>("typing_stop", { roomId });
 }
 
 export interface OutboundEditMessage {

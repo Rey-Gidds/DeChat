@@ -18,6 +18,8 @@ import {
 import { ObjectId } from "mongodb";
 import { InMemoryPresenceStore, type PresenceStore } from "./presence-store";
 import { subscriptionManager } from "./subscription-manager";
+import { TypingLeaseManager } from "./typing-lease";
+import { UnreadCounterManager } from "./unread-counter";
 import type { AuthedSocket, MembershipCacheEntry } from "./types";
 
 const app = express();
@@ -42,6 +44,12 @@ const io = new Server(server, {
 });
 
 const presence: PresenceStore = new InMemoryPresenceStore();
+
+const typingLeases = new TypingLeaseManager((roomId, userId) => {
+  io.to(`room:${roomId}`).emit("typing_expired", { roomId, userId });
+});
+
+const unreadCounters = new UnreadCounterManager();
 
 app.get("/health", (_req:any, res:any) => {
   res.json({ status: "healthy", service: "websocket-server" });
@@ -129,7 +137,7 @@ app.post("/internal/membership-updated", async (req:any, res:any) => {
     // Legacy compatibility
     io.to(`user:${userId}`).emit("membership_updated", { userId, roomId, status: normalized });
   } else if (isBlocked || normalized === "KICKED" || normalized === "LEFT") {
-    // Kick / block — dual channel + force unsubscribe
+    // Kick / block — dual channel + force unsubscribe + clear unread counters
     io.to(`room:${roomId}`).emit("room_member_kicked", {
       roomId, userId, kickedBy: kickedBy || null, reason: reason || "removed",
     });
@@ -138,6 +146,8 @@ app.post("/internal/membership-updated", async (req:any, res:any) => {
     });
     await subscriptionManager.unsubscribeUserFromRoom(userSockets as any[], roomId);
     invalidateMembershipCache(userSockets as any[], roomId);
+    // Clean up unread counters
+    void unreadCounters.delete(userId, roomId);
     // Legacy compatibility
     io.to(`user:${userId}`).emit("membership_updated", { userId, roomId, status: normalized });
   } else if (normalized === "REJECTED") {
@@ -356,6 +366,13 @@ io.on("connection", async (socket: AuthedSocket) => {
       return;
     }
     const added = await subscriptionManager.subscribeRoom(socket, roomId);
+
+    // Send typing snapshot for late joiners
+    const snapshotTypers = typingLeases.getActiveTypers(roomId);
+    if (snapshotTypers.length > 0) {
+      socket.emit("typing_snapshot", { roomId, users: snapshotTypers.map((u) => ({ userId: u })) });
+    }
+
     ack?.({ ok: true, subscribed: added });
   });
 
@@ -401,6 +418,12 @@ io.on("connection", async (socket: AuthedSocket) => {
         roomId,
         userId: socket.data.userId,
       });
+    }
+
+    // Send typing snapshot for late joiners
+    const joinSnapshotTypers = typingLeases.getActiveTypers(roomId);
+    if (joinSnapshotTypers.length > 0) {
+      socket.emit("typing_snapshot", { roomId, users: joinSnapshotTypers.map((u) => ({ userId: u })) });
     }
 
     ack?.({ ok: true, roomId });
@@ -674,12 +697,16 @@ io.on("connection", async (socket: AuthedSocket) => {
 
         // ── NEW: Per-subscriber unread increment (skip sender + viewers) ──
         const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        const createdAtDate = new Date(savedMessage.createdAt);
         for (const sRaw of roomSockets) {
           const s = sRaw as any;
           if (s.data.userId === socket.data.userId) continue;           // skip sender
           if (s.data.viewingRoomId === roomId) continue;                // skip viewers
+          const { count, version } = await unreadCounters.increment(s.data.userId, roomId, createdAtDate);
           io.to(`user:${s.data.userId}`).emit("user_unread_increment", {
             roomId,
+            unreadCount: count,
+            version,
             senderId: socket.data.userId,
             senderName: senderInfo.name,
             messageType,
@@ -912,10 +939,10 @@ io.on("connection", async (socket: AuthedSocket) => {
     }
   );
 
-  // ── typing_start ──────────────────────────────────────────────────
+  // ── typing (lease-based) ────────────────────────────────────────────
 
   socket.on(
-    "typing_start",
+    "typing",
     async (payload: { roomId?: string; preview?: string }, ack) => {
       const roomId = payload?.roomId || socket.data.roomId;
       if (!roomId) {
@@ -940,41 +967,55 @@ io.on("connection", async (socket: AuthedSocket) => {
           ? payload.preview.slice(0, MAX_TYPING_PREVIEW_SIZE)
           : "";
 
-      socket.to(`room:${roomId}`).emit("typing_started", {
-        roomId,
-        userId: socket.data.userId,
-        preview,
-      });
+      const isNew = typingLeases.refreshLease(roomId, socket.data.userId);
+      if (isNew) {
+        socket.to(`room:${roomId}`).emit("typing_started", {
+          roomId,
+          userId: socket.data.userId,
+          preview,
+        });
+      }
       ack?.({ ok: true });
     }
   );
 
-  // ── typing_stop ───────────────────────────────────────────────────
+  // ── Deprecated: typing_start (backward compat — delegates to typing handler) ─
 
-  socket.on("typing_stop", async (payload: { roomId?: string }, ack) => {
-    const roomId = payload?.roomId || socket.data.roomId;
-    if (!roomId) {
-      ack?.({ ok: false, error: "roomId required" });
-      return;
+  socket.on(
+    "typing_start",
+    async (payload: { roomId?: string; preview?: string }, ack) => {
+      // Forward to the lease-based typing handler for backward compatibility
+      socket.emit("typing", payload);
+      ack?.({ ok: true });
     }
+  );
 
-    const member = await checkMembership(socket, roomId);
-    if (!member) {
-      ack?.({ ok: false, error: "Not an active member of this room" });
-      return;
-    }
+  // ── Deprecated: typing_stop (no-op — lease expiry handles stopping) ──
 
-    const disabled = await isRoomDisabled(roomId);
-    if (disabled) {
-      ack?.({ ok: false, error: "ROOM_DISABLED" });
-      return;
-    }
-
-    socket.to(`room:${roomId}`).emit("typing_stopped", {
-      roomId,
-      userId: socket.data.userId,
-    });
+  socket.on("typing_stop", async (_payload: { roomId?: string }, ack) => {
+    // No-op: the lease expiry timer handles stopping now
     ack?.({ ok: true });
+  });
+
+  // ── mark_as_read ──────────────────────────────────────────────────
+
+  socket.on("mark_as_read", async (payload: { roomId?: string; version: number }, ack) => {
+    const { roomId: payloadRoomId, version } = payload;
+    const userId = socket.data.userId;
+    const roomId = payloadRoomId || socket.data.roomId;
+    if (!roomId || !userId) {
+      ack?.({ ok: false, error: "Missing roomId/userId" });
+      return;
+    }
+
+    const result = await unreadCounters.resetIfVersion(userId, roomId, version);
+    if (result.success) {
+      io.to(`user:${userId}`).emit("unread_count_updated", { roomId, unreadCount: 0, version: result.actualVersion });
+      ack?.({ ok: true });
+    } else {
+      // Version mismatch — another message arrived. Return actual count.
+      ack?.({ ok: true, conflict: true, unreadCount: result.actualCount, version: result.actualVersion });
+    }
   });
 
   // ── sync_since ────────────────────────────────────────────────────
@@ -1059,6 +1100,12 @@ io.on("connection", async (socket: AuthedSocket) => {
         isOnline,
       });
 
+      // Clean up typing leases on disconnect
+      const wasTyping = typingLeases.removeUser(roomId, userId);
+      if (wasTyping) {
+        io.to(`room:${roomId}`).emit("typing_expired", { roomId, userId });
+      }
+
       // Notify room that user stopped viewing (if they were viewing)
       if (socket.data.viewingRoomId === roomId) {
         io.to(`room:${roomId}`).emit("viewing_room_stop", {
@@ -1106,6 +1153,13 @@ io.on("connection", async (socket: AuthedSocket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  // Ensure unread_counters indexes on startup
+  try {
+    await UnreadCounterManager.ensureIndexes();
+    console.log("[unread_counters] indexes ensured");
+  } catch (err) {
+    console.error("[unread_counters] failed to ensure indexes:", err);
+  }
   console.log(`WebSocket server running on port ${PORT}`);
 });

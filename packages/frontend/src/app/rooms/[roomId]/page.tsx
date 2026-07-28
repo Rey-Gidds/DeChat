@@ -5,8 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import {
   connectToRoom,
   disconnectSocket,
-  emitTypingStart,
-  emitTypingStop,
+  emitTyping,
   getSocket,
   sendEncryptedMessage,
   syncSince,
@@ -16,6 +15,8 @@ import {
   stopHeartbeat,
   type RealtimeRoomMessage,
   type TypingEventPayload,
+  type TypingExpiredPayload,
+  type TypingSnapshotPayload,
   USE_GLOBAL_SOCKET,
   setGlobalActiveRoomId,
 } from "@/lib/socket-client";
@@ -293,9 +294,8 @@ export default function RoomChatPage() {
   const roomId = params?.roomId;
   const { openRecovery, hasPrivateKey } = useKeyHealth();
   const { data: session } = useSession();
-  // Cached userId from better-auth session — available instantly on SPA navigations.
   const sessionUserId = session?.user?.id ?? null;
-  const { clear: clearUnread } = useUnreadStore();
+  const { clear: clearUnread, versions: unreadVersions, syncFromServer } = useUnreadStore();
   const { socket: gsSocket, connected: gsConnected } = useGlobalSocket();
 
   const { memberships: cachedMyRooms } = useMyRooms("APPROVED");
@@ -437,7 +437,8 @@ export default function RoomChatPage() {
   const lifecycleRef = useRef<AppLifecycle | null>(null);
   const refreshMembersRef = useRef<() => void>(() => {});
   const backgroundFilesRef = useRef<Map<string, { file: File; caption?: string }>>(new Map());
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingEmitRef = useRef<number>(0);
+  const TYPING_THROTTLE_MS = 300;
   const listRef = useRef<HTMLDivElement>(null);
   const setListRef = useCallback((el: HTMLDivElement | null) => {
     (listRef as any).current = el;
@@ -1199,6 +1200,19 @@ export default function RoomChatPage() {
             setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
           });
 
+          socket.on("typing_expired", (payload: TypingExpiredPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
+          });
+
+          socket.on("typing_snapshot", (payload: TypingSnapshotPayload) => {
+            if (payload.roomId !== roomId) return;
+            setTypingUsers(prev => {
+              const newIds = new Set([...prev, ...payload.users.map(u => u.userId)]);
+              return Array.from(newIds);
+            });
+          });
+
           socket.on("PRESENCE_UPDATED", (payload: { roomId: string; userId: string; isOnline: boolean }) => {
             if (payload.roomId !== roomId) return;
             const targetUserId = String(payload.userId);
@@ -1325,7 +1339,6 @@ export default function RoomChatPage() {
         disconnectSocket();
       }
 
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       if (rotationTimeoutRef.current) clearTimeout(rotationTimeoutRef.current);
       if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
       setCacheServed(false);
@@ -1339,7 +1352,19 @@ export default function RoomChatPage() {
     if (!gsSocket || !gsConnected || !roomId) return;
 
     setStatus("Connected");
+    const version = unreadVersions[roomId] ?? 0;
+    // Optimistic clear
     void clearUnread(roomId);
+    // Server-authoritative mark-as-read with version guard
+    gsSocket.emit("mark_as_read", { roomId, version }, (ack: any) => {
+      if (ack?.conflict) {
+        // A message arrived concurrently — accept the server's actual count
+        void syncFromServer([{
+          roomId, unreadCount: ack.unreadCount,
+          version: ack.version, lastMessageTimestamp: Date.now()
+        }]);
+      }
+    });
     setGlobalActiveRoomId(roomId);
     gsSocket.emit("viewing_room_start", { roomId });
 
@@ -1437,9 +1462,17 @@ export default function RoomChatPage() {
       setTypingUsers((prev) => prev.includes(payload.userId) ? prev : [...prev, payload.userId]);
     };
 
-    const onTypingStopped = (payload: TypingEventPayload) => {
+    const onTypingExpired = (payload: TypingExpiredPayload) => {
       if (payload.roomId !== roomId) return;
       setTypingUsers((prev) => prev.filter((id) => id !== payload.userId));
+    };
+
+    const onTypingSnapshot = (payload: TypingSnapshotPayload) => {
+      if (payload.roomId !== roomId) return;
+      setTypingUsers(prev => {
+        const newIds = new Set([...prev, ...payload.users.map(u => u.userId)]);
+        return Array.from(newIds);
+      });
     };
 
     const onPresenceUpdated = (payload: { roomId: string; userId: string; isOnline: boolean }) => {
@@ -1524,7 +1557,10 @@ export default function RoomChatPage() {
     gsSocket.on("message_edited", onMessageEdited);
     gsSocket.on("message_deleted", onMessageDeleted);
     gsSocket.on("typing_started", onTypingStarted);
-    gsSocket.on("typing_stopped", onTypingStopped);
+    gsSocket.on("typing_expired", onTypingExpired);
+    gsSocket.on("typing_snapshot", onTypingSnapshot);
+    // Backward compat — still listen to typing_stopped from older server
+    gsSocket.on("typing_stopped", onTypingExpired);
     gsSocket.on("PRESENCE_UPDATED", onPresenceUpdated);
     gsSocket.on("PENDING_KEY_ROTATION", onPendingRotation);
     gsSocket.on("KEY_ROTATION_COMPLETE", onRotationComplete);
@@ -1538,7 +1574,9 @@ export default function RoomChatPage() {
       gsSocket.off("message_edited", onMessageEdited);
       gsSocket.off("message_deleted", onMessageDeleted);
       gsSocket.off("typing_started", onTypingStarted);
-      gsSocket.off("typing_stopped", onTypingStopped);
+      gsSocket.off("typing_expired", onTypingExpired);
+      gsSocket.off("typing_snapshot", onTypingSnapshot);
+      gsSocket.off("typing_stopped", onTypingExpired);
       gsSocket.off("PRESENCE_UPDATED", onPresenceUpdated);
       gsSocket.off("PENDING_KEY_ROTATION", onPendingRotation);
       gsSocket.off("KEY_ROTATION_COMPLETE", onRotationComplete);
@@ -1691,7 +1729,6 @@ export default function RoomChatPage() {
 
       if (!response.ok) throw new Error(response.error || "Failed to send message");
 
-      await emitTypingStop(roomId).catch(() => undefined);
       if (response.message) {
         const decryptedBody = await decryptMessage(response.message, roomKey);
         await deleteOutboxEntry(clientMessageId);
@@ -1792,14 +1829,14 @@ export default function RoomChatPage() {
     if (roomDisabled) return;
 
     if (value.trim().length > 0) {
-      await emitTypingStart(roomId, value.slice(0, 40)).catch(() => undefined);
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        emitTypingStop(roomId).catch(() => undefined);
-      }, 900);
-    } else {
-      await emitTypingStop(roomId).catch(() => undefined);
+      const now = Date.now();
+      if (now - lastTypingEmitRef.current >= TYPING_THROTTLE_MS) {
+        lastTypingEmitRef.current = now;
+        await emitTyping(roomId, value.slice(0, 40)).catch(() => undefined);
+      }
+      // No typing_stop timeout needed — server lease handles expiry
     }
+    // Empty input: do nothing — lease will expire naturally
   }
 
   const isOwner = roomMeta?.membership?.role === "OWNER";

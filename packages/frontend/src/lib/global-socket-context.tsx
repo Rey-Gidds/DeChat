@@ -56,11 +56,29 @@ function revalidateRooms(mutate: ReturnType<typeof useSWRConfig>["mutate"]) {
 export function GlobalSocketProvider({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
   const { mutate: globalMutate } = useSWRConfig();
-  const { loadFromDB, increment, clear: clearUnread } = useUnreadStore();
+  const { loadFromDB, increment, clear: clearUnread, versions, syncFromServer } = useUnreadStore();
 
   const [socketState, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const mountedRef = useRef(true);
+
+  // ── Server-sync helper ──────────────────────────────────────────
+
+  async function syncUnreadCountsFromServer() {
+    try {
+      const res = await fetch("/api/unread-counts", { credentials: "include" });
+      if (!res.ok) {
+        console.warn("[GlobalSocket] Failed to sync unread counts from server:", res.status);
+        return;
+      }
+      const data = await res.json();
+      if (data.counts) {
+        await syncFromServer(data.counts);
+      }
+    } catch (err) {
+      console.warn("[GlobalSocket] Failed to sync unread counts from server", err);
+    }
+  }
 
   // ── connect / disconnect lifecycle ─────────────────────────────
 
@@ -80,12 +98,23 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
         }
         setGlobalSocket(s);
         setSocket(s);
-        if (s.connected) setConnected(true);
+        if (s.connected) {
+          setConnected(true);
+          void loadFromDB();
+          void syncUnreadCountsFromServer();
+        }
 
         s.on("connect", () => {
           if (mountedRef.current) {
             setConnected(true);
             void loadFromDB();
+            void syncUnreadCountsFromServer();
+          }
+        });
+
+        s.io.on("reconnect", () => {
+          if (mountedRef.current) {
+            void syncUnreadCountsFromServer();
           }
         });
 
@@ -117,10 +146,18 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
     const s = getGlobalSocket();
     if (!s) return;
 
-    const onUnreadIncrement = (p: { roomId: string; createdAt?: string | number }) => {
+    const onUnreadIncrement = (p: { roomId: string; unreadCount: number; version: number; createdAt?: string | number }) => {
       const ts = p.createdAt ? new Date(p.createdAt).getTime() : undefined;
-      void increment(p.roomId, ts);
+      void increment(p.roomId, p.unreadCount, p.version, ts);
       revalidateRooms(globalMutate);
+    };
+
+    const onUnreadCountUpdated = (p: { roomId: string; unreadCount: number; version: number }) => {
+      if (p.unreadCount === 0) {
+        void clearUnread(p.roomId, p.version);
+      } else {
+        void increment(p.roomId, p.unreadCount, p.version);
+      }
     };
 
     const onMemberKicked = (p: { roomId: string; roomName?: string }) => {
@@ -153,6 +190,7 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
     const onRoomUpdated = () => revalidateRooms(globalMutate);
 
     s.on("user_unread_increment", onUnreadIncrement);
+    s.on("unread_count_updated", onUnreadCountUpdated);
     s.on("room_member_kicked", onMemberKicked);
     s.on("room_member_left", onMemberLeft);
     s.on("room_member_joined", onMemberJoined);
@@ -165,6 +203,7 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
 
     return () => {
       s.off("user_unread_increment", onUnreadIncrement);
+      s.off("unread_count_updated", onUnreadCountUpdated);
       s.off("room_member_kicked", onMemberKicked);
       s.off("room_member_left", onMemberLeft);
       s.off("room_member_joined", onMemberJoined);

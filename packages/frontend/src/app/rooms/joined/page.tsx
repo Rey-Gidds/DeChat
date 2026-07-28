@@ -59,7 +59,7 @@ export default function JoinedRoomsPage() {
       setTypingMap((prev) => ({ ...prev, [payload.roomId]: true }));
     };
 
-    const onTypingStopped = (payload: { roomId: string }) => {
+    const onTypingExpired = (payload: { roomId: string }) => {
       if (!payload?.roomId) return;
       setTypingMap((prev) => ({ ...prev, [payload.roomId]: false }));
     };
@@ -69,7 +69,9 @@ export default function JoinedRoomsPage() {
     socket.on("room_member_left", onMemberLeft);
     socket.on("room_member_joined", onMemberJoined);
     socket.on("typing_started", onTypingStarted);
-    socket.on("typing_stopped", onTypingStopped);
+    socket.on("typing_expired", onTypingExpired);
+    // Backward compat
+    socket.on("typing_stopped", onTypingExpired);
 
     return () => {
       socket.off("room_deleted", onRoomDeleted);
@@ -77,7 +79,8 @@ export default function JoinedRoomsPage() {
       socket.off("room_member_left", onMemberLeft);
       socket.off("room_member_joined", onMemberJoined);
       socket.off("typing_started", onTypingStarted);
-      socket.off("typing_stopped", onTypingStopped);
+      socket.off("typing_expired", onTypingExpired);
+      socket.off("typing_stopped", onTypingExpired);
     };
   }, [socket, revalidate, clearUnread]);
 

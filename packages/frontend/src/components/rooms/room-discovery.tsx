@@ -172,14 +172,17 @@ export function RoomDiscovery() {
     const onTypingStarted = (p: { roomId: string }) => {
       if (p?.roomId) setTypingMap((prev) => ({ ...prev, [p.roomId]: true }));
     };
-    const onTypingStopped = (p: { roomId: string }) => {
+    const onTypingExpired = (p: { roomId: string }) => {
       if (p?.roomId) setTypingMap((prev) => ({ ...prev, [p.roomId]: false }));
     };
     socket.on("typing_started", onTypingStarted);
-    socket.on("typing_stopped", onTypingStopped);
+    socket.on("typing_expired", onTypingExpired);
+    // Backward compat
+    socket.on("typing_stopped", onTypingExpired);
     return () => {
       socket.off("typing_started", onTypingStarted);
-      socket.off("typing_stopped", onTypingStopped);
+      socket.off("typing_expired", onTypingExpired);
+      socket.off("typing_stopped", onTypingExpired);
     };
   }, [socket]);
 
