@@ -1,0 +1,8 @@
+# ui-interactions
+- First-paint rendering must be deterministic — zero flicker, zero layout jump, zero scroll animation. Use synchronous scroll/dimension setting (e.g., setting `scrollTop = scrollHeight` before paint, `queueMicrotask` for same-cycle updates) rather than deferred approaches like `setTimeout` or `requestAnimationFrame` for critical positioning paths. Confidence: 0.75
+- For chat scroll anchoring, prefer CSS `overflow-anchor` with a zero-height sentinel element at the bottom of the message list (the browser's native scroll anchoring) over pure-JS scroll management. The sentinel should have `overflow-anchor: auto` while the container uses `overflow-anchor: none` so anchoring is explicit and predictable. Confidence: 0.75
+- Loading overlays must only be shown for genuine loading/empty states (cold starts), never used to mask rendering artifacts such as scroll-position flashes or layout shifts. The DOM must be correct before visible paint rather than hiding problems behind an overlay. Confidence: 0.80
+- Info/context button must be positioned beside each message bubble (not overlapping it) and open a floating popover/dialog with action options. Confidence: 0.85
+- Swipe-to-reply gestures must be mobile-only, guarded by pointer type detection — disable swipe interactions on desktop/laptop. Confidence: 0.85
+- Swipe gestures must be bounded within the chat box horizontally and spring back to original position when released below threshold. Confidence: 0.80
+- For mobile, implement custom long-press handlers for copy/action menus instead of relying on default browser context menu behavior, which doesn't work reliably on mobile devices. Confidence: 0.65

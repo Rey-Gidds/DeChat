@@ -33,7 +33,7 @@ export function KeyStatusBanner() {
 
   return (
     <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-3">
-      <div className="mx-auto max-w-6xl flex items-center justify-between gap-4">
+      <div className="mx-auto max-w-[480px] flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-sm text-amber-200 min-w-0">
           <span className="shrink-0">⚠</span>
           <span className="truncate">

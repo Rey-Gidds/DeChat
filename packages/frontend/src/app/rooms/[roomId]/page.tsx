@@ -307,6 +307,7 @@ export default function RoomChatPage() {
   const [status, setStatus] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [cacheServed, setCacheServed] = useState(false);
+  const [isColdStart, setIsColdStart] = useState(false);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
 
   useEffect(() => {
@@ -440,12 +441,16 @@ export default function RoomChatPage() {
   const lastTypingEmitRef = useRef<number>(0);
   const TYPING_THROTTLE_MS = 300;
   const listRef = useRef<HTMLDivElement>(null);
-  const setListRef = useCallback((el: HTMLDivElement | null) => {
-    (listRef as any).current = el;
-    // Don't scroll here — the container is empty at mount.
-    // Scroll is handled by the bootstrap timeout after messages render,
-    // and by appendDecrypted for incoming/sent messages.
-  }, []);
+  const setListRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      (listRef as any).current = el;
+      if (el && messages.length > 0) {
+        // Instant scroll before the browser paints — no flash
+        el.scrollTop = el.scrollHeight;
+      }
+    },
+    [messages.length]
+  );
   const shouldStickToBottomRef = useRef(true);
   const lastMessageRef = useRef<{ createdAt: string; id: string } | null>(null);
   const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -493,6 +498,13 @@ export default function RoomChatPage() {
 
       setMessages((prev) => {
         const merged = mergeMessages(prev, decrypted);
+        if (stick && shouldStickToBottomRef.current) {
+          queueMicrotask(() => {
+            if (listRef.current) {
+              listRef.current.scrollTop = listRef.current.scrollHeight;
+            }
+          });
+        }
         // Memory cap: trim from the opposite end if exceeding MAX_LOADED_MESSAGES
         if (merged.length > MAX_LOADED_MESSAGES) {
           return merged.slice(merged.length - MAX_LOADED_MESSAGES);
@@ -502,12 +514,8 @@ export default function RoomChatPage() {
 
       const last = decrypted[decrypted.length - 1];
       lastMessageRef.current = { createdAt: last.createdAt, id: last.id };
-
-      if (stick && shouldStickToBottomRef.current) {
-        requestAnimationFrame(() => scrollToBottom());
-      }
     },
-    [currentUserId, scrollToBottom, roomId]
+    [currentUserId, roomId]
   );
 
   const runSync = useCallback(async () => {
@@ -691,11 +699,12 @@ export default function RoomChatPage() {
       try {
         // Phase 0: Instant render from IndexedDB cache
         const cached = await getCachedMessages(roomId);
-        const isColdStart = cached.length === 0;
+        const cold = cached.length === 0;
+        setIsColdStart(cold);
 
         // Pre-load room keys from IndexedDB so media and reply previews decrypt instantly.
         // Scan cached messages for unique key versions and load the highest one available.
-        if (!isColdStart) {
+        if (!cold) {
           const keyVersions = new Set<number>();
           for (const msg of cached) {
             if (msg.roomKeyVersion != null) keyVersions.add(msg.roomKeyVersion);
@@ -725,14 +734,14 @@ export default function RoomChatPage() {
           setMessages(mergeMessages(decryptedCache, optimistic));
           // If we already know the userId (session cached), dismiss the overlay immediately
           // so the user sees the working set without waiting for network calls.
-          if (usedCorrectUserId && !isColdStart) {
-            scrollToBottom("auto");
-            requestAnimationFrame(() => {
-              setCacheServed(true);
-              setIsBootstrapping(false);
-            });
+          if (usedCorrectUserId && !cold) {
+            if (listRef.current) {
+              listRef.current.scrollTop = listRef.current.scrollHeight;
+            }
+            setCacheServed(true);
+            setIsBootstrapping(false);
           }
-          if (isColdStart) {
+          if (cold) {
             setIsBootstrapping(true);
           }
         }
@@ -885,28 +894,12 @@ export default function RoomChatPage() {
           setHistoryCursor(cached[0].id);
         }
 
-        // If Phase 0 already dismissed the overlay (correct userId + warm cache),
-        // skip the scroll-and-dismiss timeout to avoid scroll jump.
-        if (!isColdStart && !usedCorrectUserId && mounted) {
-          setTimeout(() => {
-            if (mounted) {
-              scrollToBottom("auto");
-              requestAnimationFrame(() => {
-                setCacheServed(true);
-                setIsBootstrapping(false);
-              });
-            }
-          }, 50);
-        } else if (isColdStart && mounted) {
-          setTimeout(() => {
-            if (mounted && shouldStickToBottomRef.current) {
-              scrollToBottom("auto");
-            }
-            requestAnimationFrame(() => {
-              setCacheServed(true);
-              setIsBootstrapping(false);
-            });
-          }, 100);
+        if (mounted) {
+          if (listRef.current) {
+            listRef.current.scrollTop = listRef.current.scrollHeight;
+          }
+          setCacheServed(true);
+          setIsBootstrapping(false);
         }
 
         // Check for pending key rotation
@@ -2357,7 +2350,7 @@ export default function RoomChatPage() {
         minHeight: 0,
       }}
     >
-      <div className="relative flex min-h-0 h-full flex-1 flex-col sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
+      <div className="relative flex min-h-0 h-full flex-1 flex-col w-full sm:w-[480px] sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:mx-auto sm:my-4 sm:max-w-[480px] sm:border sm:border-neutral-800 sm:bg-black sm:shadow-2xl overflow-hidden">
         <RoomHeader
           roomName={roomMeta?.room.name ?? "Room"}
           showOptions={showOptions}
@@ -2430,8 +2423,8 @@ export default function RoomChatPage() {
             {showChatShell && (
               <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden">
                 <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-                  {/* Loading overlay — reused for both bootstrap phase and quote-click loading */}
-                  {(quoteLoading || !cacheServed) && (
+                  {/* Loading overlay — reused for cold start bootstrap phase and quote-click loading */}
+                  {(quoteLoading || (isColdStart && !cacheServed)) && (
                     <div className="absolute inset-0 z-30 flex items-center justify-center bg-black">
                       <div className="flex items-center gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-5 py-3">
                         <div className="h-4 w-4 animate-spin rounded-full border border-neutral-400 border-t-transparent" />

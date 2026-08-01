@@ -94,7 +94,7 @@ export default function JoinedRoomsPage() {
 
   if (!session?.user) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <div className="mx-auto max-w-[480px] px-4 py-16 text-center">
         <p className="text-sm text-neutral-500">Sign in to view your rooms.</p>
         <Link href="/sign-in" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">Sign in</Link>
       </div>
@@ -104,7 +104,7 @@ export default function JoinedRoomsPage() {
   const error = swrError instanceof Error ? swrError.message : "";
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto max-w-[480px] px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Joined Rooms</h1>
         <p className="mt-2 text-sm text-neutral-500">All rooms you&apos;re a member of.</p>
@@ -115,7 +115,7 @@ export default function JoinedRoomsPage() {
       )}
 
       {isLoading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-44 animate-pulse border border-neutral-900 bg-neutral-950" />
           ))}
@@ -126,7 +126,7 @@ export default function JoinedRoomsPage() {
           <Link href="/" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">Discover rooms</Link>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1">
           {sortedRooms.map((r) => {
             const unread = counts[r.roomId] ?? 0;
             const isTyping = Boolean(typingMap[r.roomId]);

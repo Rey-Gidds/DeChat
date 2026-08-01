@@ -308,7 +308,7 @@ export function RoomDiscovery() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto max-w-[480px] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-8 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
         <p className="text-[10px] uppercase tracking-[0.25em] text-neutral-500">
           Encrypted rooms
@@ -366,7 +366,7 @@ export function RoomDiscovery() {
       )}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
@@ -388,7 +388,7 @@ export function RoomDiscovery() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1">
             {sortedRooms.map((room:any) => {
               const rId = room.id ?? room._id?.toString() ?? "";
               const unread = counts[rId] ?? 0;

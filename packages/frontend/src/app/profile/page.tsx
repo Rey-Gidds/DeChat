@@ -180,7 +180,7 @@ export default function ProfilePage() {
 
   if (error || !profile) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <div className="mx-auto max-w-[480px] px-4 py-16 text-center">
         <Shield className="mx-auto h-12 w-12 text-red-500/50" />
         <h2 className="mt-4 text-xl font-bold text-white">Access Denied</h2>
         <p className="mt-2 text-sm text-neutral-500">{error || "User session not found."}</p>
@@ -192,7 +192,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto max-w-[480px] px-4 py-8 sm:px-6 sm:py-12">
       <Link href="/" className="mb-8 inline-flex items-center gap-2 text-xs uppercase tracking-widest text-neutral-500 hover:text-white transition-colors">
         <ArrowLeft size={14} />
         Back to Discover

@@ -64,3 +64,13 @@ body {
     -1px -1px,
     -1px -1px;
 }
+
+/* Prevent scroll jumping in message list */
+.message-list-container {
+  overflow-anchor: none; /* disable on container */
+}
+
+#scroll-anchor {
+  overflow-anchor: auto;
+}
+

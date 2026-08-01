@@ -18,7 +18,7 @@ export default function PendingRequestsPage() {
 
   if (!session?.user) {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+      <div className="mx-auto max-w-[480px] px-4 py-16 text-center">
         <p className="text-sm text-neutral-500">Sign in to view requests.</p>
         <Link href="/sign-in" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">
           Sign in
@@ -30,7 +30,7 @@ export default function PendingRequestsPage() {
   const error = swrError instanceof Error ? swrError.message : "";
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto max-w-[480px] px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Pending Requests</h1>
         <p className="mt-2 text-sm text-neutral-500">

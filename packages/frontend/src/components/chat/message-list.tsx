@@ -571,7 +571,7 @@ export function MessageList({
     <div
       ref={listRef}
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto bg-grid-blueprint px-3 py-4 sm:px-4"
+      className="message-list-container flex-1 overflow-y-auto bg-grid-blueprint px-3 py-4 sm:px-4"
       style={{ touchAction: "pan-y", overscrollBehavior: "contain" }}
     >
       {/* ── Top sentinel: triggers infinite scroll upward ── */}
@@ -626,6 +626,7 @@ export function MessageList({
           </div>
         </div>
       )}
+      <div id="scroll-anchor" style={{ overflowAnchor: "auto", height: 1 }} />
     </div>
   );
 }
