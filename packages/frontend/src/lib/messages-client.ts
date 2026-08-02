@@ -51,6 +51,11 @@ export async function syncMessagesSince(
 export interface ResumeResponse {
   strategy: "UP_TO_DATE" | "DELTA" | "REPLACE";
   messages: EncryptedMessageRecord[];
+  mutationPatches?: {
+    edits: EncryptedMessageRecord[];
+    deletes: { messageId: string }[];
+  };
+  serverMutationVersion?: number;
 }
 
 export async function resumeSync(

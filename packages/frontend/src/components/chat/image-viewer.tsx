@@ -30,7 +30,7 @@ interface ImageViewerProps {
   onSend?: (file: File, caption: string) => void;
 
   // ── View mode only: reply ──
-  onReply?: (messageId: string) => void;
+  onReply?: (messageId: string, replyText?: string) => void;
 }
 
 const ZOOM_LEVELS = [1, 2, 3] as const;
@@ -155,8 +155,9 @@ export function ImageViewer({
 
   const handleReplySend = useCallback(() => {
     if (!replyText.trim() || !message || sendingReply) return;
+    const textToSend = replyText.trim();
     setSendingReply(true);
-    onReply?.(message.id);
+    onReply?.(message.id, textToSend);
     setReplyText("");
     setSendingReply(false);
     onClose();

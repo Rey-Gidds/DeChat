@@ -36,7 +36,7 @@ export default function MyRoomsPage() {
 
   if (!session?.user) {
     return (
-      <div className="mx-auto max-w-[480px] px-4 py-16 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <p className="text-sm text-neutral-500">Sign in to manage rooms.</p>
         <Link href="/sign-in" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">Sign in</Link>
       </div>
@@ -46,7 +46,7 @@ export default function MyRoomsPage() {
   const displayError = actionError || (swrError instanceof Error ? swrError.message : "");
 
   return (
-    <div className="mx-auto max-w-[480px] px-4 py-8 sm:px-6 sm:py-12">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
       <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
         <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">My Rooms</h1>
         <p className="mt-2 text-sm text-neutral-500">Manage rooms you own — disable, restore, or adjust settings.</p>

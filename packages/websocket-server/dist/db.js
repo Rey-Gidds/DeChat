@@ -8,6 +8,10 @@ exports.fetchMessagesSince = fetchMessagesSince;
 exports.persistEncryptedMessage = persistEncryptedMessage;
 exports.updateMessageContent = updateMessageContent;
 exports.deleteMessage = deleteMessage;
+exports.getApprovedMemberships = getApprovedMemberships;
+exports.getRoomsMetadata = getRoomsMetadata;
+exports.incrementMutationVersion = incrementMutationVersion;
+exports.fetchMutationPatches = fetchMutationPatches;
 require("./load-env");
 const mongodb_1 = require("mongodb");
 function getMongoUri() {
@@ -186,4 +190,105 @@ async function deleteMessage(roomId, messageId, senderId) {
     const db = await getDb();
     const result = await db.collection("room_messages").deleteOne({ _id: new mongodb_1.ObjectId(messageId), roomId: new mongodb_1.ObjectId(roomId), senderId: new mongodb_1.ObjectId(senderId) });
     return result.deletedCount > 0;
+}
+/** Returns all approved (non-blocked) membership roomIds for a user. */
+async function getApprovedMemberships(userId) {
+    const db = await getDb();
+    const docs = await db.collection("room_memberships").find({ userId: new mongodb_1.ObjectId(userId), status: "APPROVED", isBlocked: false }, { projection: { roomId: 1 } }).toArray();
+    return docs.map((d) => d.roomId.toHexString());
+}
+async function getRoomsMetadata(roomIds) {
+    if (roomIds.length === 0)
+        return [];
+    const db = await getDb();
+    const objectIds = roomIds.map((id) => new mongodb_1.ObjectId(id));
+    const rooms = await db.collection("rooms").find({ _id: { $in: objectIds } }, { projection: { name: 1, latestMessageId: 1, latestMessageCreatedAt: 1, memberCount: 1, isDisabled: 1 } }).toArray();
+    return rooms.map((r) => ({
+        roomId: r._id.toHexString(),
+        latestMessageId: r.latestMessageId ?? null,
+        latestMessageCreatedAt: r.latestMessageCreatedAt instanceof Date ? r.latestMessageCreatedAt.toISOString() : null,
+        roomName: r.name ?? "Unnamed Room",
+        memberCount: r.memberCount ?? 0,
+        isDisabled: Boolean(r.isDisabled),
+    }));
+}
+/**
+ * Atomically increments the mutationVersion counter on a room document.
+ * Called after every successful edit_message or delete_message so that clients
+ * can detect stale caches on their next sync_room_cache RPC.
+ */
+async function incrementMutationVersion(roomId) {
+    const db = await getDb();
+    await db.collection("rooms").updateOne({ _id: new mongodb_1.ObjectId(roomId) }, { $inc: { mutationVersion: 1 } });
+}
+/**
+ * Given a list of message IDs that a client has cached, returns:
+ *  - `edits`:   messages that still exist but have a non-null editedAt (content changed)
+ *  - `deletes`: IDs that no longer exist in the DB (the message was deleted)
+ *
+ * Used by sync_room_cache when the client's mutationVersion is behind the server's.
+ */
+async function fetchMutationPatches(roomId, cachedMessageIds) {
+    if (cachedMessageIds.length === 0)
+        return { edits: [], deletes: [] };
+    const db = await getDb();
+    const roomObjectId = new mongodb_1.ObjectId(roomId);
+    // Validate IDs before converting to ObjectId
+    const validIds = cachedMessageIds.filter((id) => mongodb_1.ObjectId.isValid(id));
+    const objectIds = validIds.map((id) => new mongodb_1.ObjectId(id));
+    const found = await db
+        .collection("room_messages")
+        .find({ _id: { $in: objectIds }, roomId: roomObjectId })
+        .project({ _id: 1, ciphertext: 1, iv: 1, authTag: 1, editedAt: 1, editCount: 1, roomKeyVersion: 1, createdAt: 1, senderId: 1, messageType: 1, replyTo: 1 })
+        .toArray();
+    const foundIdSet = new Set(found.map((d) => d._id.toHexString()));
+    // Enrich found docs with sender info
+    const senderIds = [...new Set(found.map((d) => d.senderId.toHexString()))];
+    const senderObjectIds = senderIds.map((id) => new mongodb_1.ObjectId(id));
+    const [users, memberships] = await Promise.all([
+        db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray(),
+        db.collection("room_memberships").find({ roomId: roomObjectId, userId: { $in: senderObjectIds } }).project({ userId: 1, userIndex: 1 }).toArray(),
+    ]);
+    const userMap = new Map(users.map((u) => [u._id.toHexString(), u]));
+    const membershipMap = new Map(memberships.map((m) => [m.userId.toHexString(), m]));
+    const edits = found
+        .filter((d) => d.editedAt != null)
+        .map((d) => {
+        const sid = d.senderId.toHexString();
+        const user = userMap.get(sid);
+        const mem = membershipMap.get(sid);
+        const replyTo = d.replyTo
+            ? {
+                messageId: d.replyTo.messageId.toString(),
+                senderId: d.replyTo.senderId.toString(),
+                senderName: d.replyTo.senderName,
+                senderUserIndex: d.replyTo.senderUserIndex ?? null,
+                messageType: d.replyTo.messageType,
+                previewIv: d.replyTo.previewIv ?? null,
+                previewCiphertext: d.replyTo.previewCiphertext ?? null,
+                previewAuthTag: d.replyTo.previewAuthTag ?? null,
+            }
+            : null;
+        return {
+            id: d._id.toHexString(),
+            ciphertext: d.ciphertext,
+            iv: d.iv,
+            authTag: d.authTag,
+            editedAt: (d.editedAt instanceof Date ? d.editedAt : new Date(d.editedAt)).toISOString(),
+            editCount: typeof d.editCount === "number" ? d.editCount : 1,
+            roomKeyVersion: typeof d.roomKeyVersion === "number" ? d.roomKeyVersion : 0,
+            createdAt: (d.createdAt instanceof Date ? d.createdAt : new Date(d.createdAt)).toISOString(),
+            senderId: sid,
+            roomId,
+            messageType: d.messageType,
+            senderName: user?.name || user?.email || null,
+            senderUserIndex: mem?.userIndex ?? null,
+            senderPfp: user?.pfp ?? null,
+            replyTo,
+        };
+    });
+    const deletes = validIds
+        .filter((id) => !foundIdSet.has(id))
+        .map((id) => ({ messageId: id }));
+    return { edits, deletes };
 }

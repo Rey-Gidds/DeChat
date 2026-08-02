@@ -14,6 +14,8 @@ import {
   getSenderInfo,
   getDb,
   getRoomsMetadata,
+  incrementMutationVersion,
+  fetchMutationPatches,
 } from "./db";
 import { ObjectId } from "mongodb";
 import { InMemoryPresenceStore, type PresenceStore } from "./presence-store";
@@ -855,6 +857,8 @@ io.on("connection", async (socket: AuthedSocket) => {
 
         ack?.({ ok: true, message: outbound });
         io.to(`room:${roomId}`).emit("message_edited", outbound);
+        // Bump mutationVersion so clients can detect stale caches on next sync
+        void incrementMutationVersion(roomId);
       } catch (err) {
         ack?.({
           ok: false,
@@ -930,6 +934,8 @@ io.on("connection", async (socket: AuthedSocket) => {
 
         ack?.({ ok: true });
         io.to(`room:${roomId}`).emit("message_deleted", outbound);
+        // Bump mutationVersion so clients can detect stale caches on next sync
+        void incrementMutationVersion(roomId);
       } catch (err) {
         ack?.({
           ok: false,
@@ -1058,6 +1064,234 @@ io.on("connection", async (socket: AuthedSocket) => {
         ack?.({ ok: true, messages });
       } catch {
         ack?.({ ok: false, error: "Failed to sync messages" });
+      }
+    }
+  );
+
+  // ── sync_room_cache ───────────────────────────────────────────────
+  // WebSocket RPC that replaces the HTTP resumeSync() in the room bootstrap.
+  // Detects new messages (delta/replace strategy) AND edited/deleted messages
+  // (mutation patches) using version metadata, so caches stay fully fresh.
+
+  socket.on(
+    "sync_room_cache",
+    async (
+      payload: {
+        roomId?: string;
+        newestCachedMessageId?: string;
+        newestCachedCreatedAt?: string;
+        mutationVersion?: number;
+        cacheVersion?: number;
+        cachedMessageIds?: string[];
+      },
+      ack
+    ) => {
+      const roomId = payload?.roomId || socket.data.roomId;
+      if (!roomId) {
+        ack?.({ ok: false, error: "roomId required" });
+        return;
+      }
+
+      const member = await checkMembership(socket, roomId);
+      if (!member) {
+        ack?.({ ok: false, error: "Not an active member of this room" });
+        return;
+      }
+
+      try {
+        const db = await getDb();
+        const room = await db.collection("rooms").findOne(
+          { _id: new ObjectId(roomId) },
+          { projection: { latestMessageId: 1, latestMessageCreatedAt: 1, mutationVersion: 1 } }
+        );
+
+        if (!room) {
+          ack?.({ ok: false, error: "Room not found" });
+          return;
+        }
+
+        const serverMutationVersion: number = typeof room.mutationVersion === "number" ? room.mutationVersion : 0;
+        const clientMutationVersion: number = typeof payload?.mutationVersion === "number" ? payload.mutationVersion : 0;
+
+        const membership = await db.collection("room_memberships").findOne(
+          { roomId: new ObjectId(roomId), userId: new ObjectId(socket.data.userId) },
+          { projection: { joinedAt: 1 } }
+        );
+        const joinedAt: Date = membership?.joinedAt instanceof Date ? membership.joinedAt : new Date(0);
+
+        const { newestCachedMessageId, newestCachedCreatedAt } = payload ?? {};
+        const CACHE_WINDOW = 100;
+        const DELTA_LIMIT = 200;
+        const collection = db.collection("room_messages");
+
+        // ── Helper: fetch latest window (REPLACE strategy) ──
+        const fetchReplaceWindow = async () => {
+          const messages = await collection
+            .find({ roomId: new ObjectId(roomId), createdAt: { $gt: joinedAt } })
+            .sort({ createdAt: -1, _id: -1 })
+            .limit(CACHE_WINDOW)
+            .toArray();
+          messages.reverse();
+
+          const enriched = await (async () => {
+            if (messages.length === 0) return [];
+            const sIds = [...new Set(messages.map((d: any) => d.senderId.toHexString()))];
+            const sOIds = sIds.map((id) => new ObjectId(id));
+            const roomOId = new ObjectId(roomId);
+            const [us, mbs] = await Promise.all([
+              db.collection("user").find({ _id: { $in: sOIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray(),
+              db.collection("room_memberships").find({ roomId: roomOId, userId: { $in: sOIds } }).project({ userId: 1, userIndex: 1 }).toArray(),
+            ]);
+            const uMap = new Map(us.map((u: any) => [u._id.toHexString(), u]));
+            const mMap = new Map(mbs.map((m: any) => [m.userId.toHexString(), m]));
+            return messages.map((d: any) => {
+              const sid = d.senderId.toHexString();
+              const u = uMap.get(sid);
+              const mb = mMap.get(sid);
+              const replyTo = d.replyTo ? {
+                messageId: d.replyTo.messageId.toString(),
+                senderId: d.replyTo.senderId.toString(),
+                senderName: d.replyTo.senderName,
+                senderUserIndex: d.replyTo.senderUserIndex ?? null,
+                messageType: d.replyTo.messageType,
+                previewIv: d.replyTo.previewIv ?? null,
+                previewCiphertext: d.replyTo.previewCiphertext ?? null,
+                previewAuthTag: d.replyTo.previewAuthTag ?? null,
+              } : null;
+              return {
+                id: d._id.toHexString(),
+                roomId,
+                senderId: sid,
+                ciphertext: d.ciphertext,
+                iv: d.iv,
+                authTag: d.authTag,
+                messageType: d.messageType,
+                roomKeyVersion: typeof d.roomKeyVersion === "number" ? d.roomKeyVersion : 0,
+                replyTo,
+                editedAt: d.editedAt ? (d.editedAt instanceof Date ? d.editedAt : new Date(d.editedAt)).toISOString() : null,
+                editCount: d.editCount ?? 0,
+                createdAt: (d.createdAt instanceof Date ? d.createdAt : new Date(d.createdAt)).toISOString(),
+                senderName: u?.name || u?.email || null,
+                senderUserIndex: mb?.userIndex ?? null,
+                senderPfp: (u?.pfp as string) ?? null,
+              };
+            });
+          })();
+
+          return { strategy: "REPLACE" as const, messages: enriched, mutationPatches: undefined, serverMutationVersion };
+        };
+
+        // ── 1. Cold start ──
+        if (!newestCachedMessageId || !newestCachedCreatedAt) {
+          ack?.({ ok: true, ...(await fetchReplaceWindow()) });
+          return;
+        }
+
+        // ── 2. Already up-to-date ──
+        if (room.latestMessageId === newestCachedMessageId && clientMutationVersion === serverMutationVersion) {
+          ack?.({ ok: true, strategy: "UP_TO_DATE", messages: [], serverMutationVersion });
+          return;
+        }
+
+        // ── 3. Delta sync ──
+        const anchorId = ObjectId.isValid(newestCachedMessageId) ? new ObjectId(newestCachedMessageId) : null;
+        const sinceDate = new Date(newestCachedCreatedAt);
+
+        if (!anchorId || Number.isNaN(sinceDate.getTime())) {
+          ack?.({ ok: true, ...(await fetchReplaceWindow()) });
+          return;
+        }
+
+        const roomOId = new ObjectId(roomId);
+        const anchor = await collection.findOne({ _id: anchorId, roomId: roomOId });
+        let deltaQuery: Record<string, unknown>;
+        if (anchor) {
+          deltaQuery = {
+            roomId: roomOId,
+            createdAt: { $gt: joinedAt },
+            $or: [
+              { createdAt: { $gt: anchor.createdAt } },
+              { createdAt: anchor.createdAt, _id: { $gt: anchorId } },
+            ],
+          };
+        } else {
+          const effectiveSince = sinceDate > joinedAt ? sinceDate : joinedAt;
+          deltaQuery = { roomId: roomOId, createdAt: { $gt: effectiveSince } };
+        }
+
+        const rawDelta = await collection
+          .find(deltaQuery)
+          .sort({ createdAt: 1, _id: 1 })
+          .limit(DELTA_LIMIT + 1)
+          .toArray();
+
+        // Large gap → replace
+        if (rawDelta.length > DELTA_LIMIT) {
+          ack?.({ ok: true, ...(await fetchReplaceWindow()) });
+          return;
+        }
+
+        // Enrich delta messages
+        const sIds = [...new Set(rawDelta.map((d: any) => d.senderId.toHexString()))];
+        const sOIds = sIds.map((id) => new ObjectId(id));
+        const [us, mbs] = await Promise.all([
+          sOIds.length > 0 ? db.collection("user").find({ _id: { $in: sOIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray() : [],
+          sOIds.length > 0 ? db.collection("room_memberships").find({ roomId: roomOId, userId: { $in: sOIds } }).project({ userId: 1, userIndex: 1 }).toArray() : [],
+        ]);
+        const uMap = new Map(us.map((u: any) => [u._id.toHexString(), u]));
+        const mMap = new Map(mbs.map((m: any) => [m.userId.toHexString(), m]));
+
+        const deltaMessages = rawDelta.map((d: any) => {
+          const sid = d.senderId.toHexString();
+          const u = uMap.get(sid);
+          const mb = mMap.get(sid);
+          const replyTo = d.replyTo ? {
+            messageId: d.replyTo.messageId.toString(),
+            senderId: d.replyTo.senderId.toString(),
+            senderName: d.replyTo.senderName,
+            senderUserIndex: d.replyTo.senderUserIndex ?? null,
+            messageType: d.replyTo.messageType,
+            previewIv: d.replyTo.previewIv ?? null,
+            previewCiphertext: d.replyTo.previewCiphertext ?? null,
+            previewAuthTag: d.replyTo.previewAuthTag ?? null,
+          } : null;
+          return {
+            id: d._id.toHexString(),
+            roomId,
+            senderId: sid,
+            ciphertext: d.ciphertext,
+            iv: d.iv,
+            authTag: d.authTag,
+            messageType: d.messageType,
+            roomKeyVersion: typeof d.roomKeyVersion === "number" ? d.roomKeyVersion : 0,
+            replyTo,
+            editedAt: d.editedAt ? (d.editedAt instanceof Date ? d.editedAt : new Date(d.editedAt)).toISOString() : null,
+            editCount: d.editCount ?? 0,
+            createdAt: (d.createdAt instanceof Date ? d.createdAt : new Date(d.createdAt)).toISOString(),
+            senderName: u?.name || u?.email || null,
+            senderUserIndex: mb?.userIndex ?? null,
+            senderPfp: (u?.pfp as string) ?? null,
+          };
+        });
+
+        // ── 4. Mutation patches (only for DELTA when mutationVersion mismatch) ──
+        let mutationPatches: { edits: any[]; deletes: any[] } | undefined;
+        if (clientMutationVersion !== serverMutationVersion) {
+          const ids = (payload?.cachedMessageIds ?? []).slice(0, 100);
+          if (ids.length > 0) {
+            mutationPatches = await fetchMutationPatches(roomId, ids);
+          }
+        }
+
+        ack?.({
+          ok: true,
+          strategy: "DELTA",
+          messages: deltaMessages,
+          mutationPatches,
+          serverMutationVersion,
+        });
+      } catch (err) {
+        ack?.({ ok: false, error: err instanceof Error ? err.message : "sync_room_cache failed" });
       }
     }
   );

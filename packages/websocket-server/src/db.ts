@@ -300,3 +300,120 @@ export async function getRoomsMetadata(
     isDisabled: Boolean(r.isDisabled),
   }));
 }
+
+/**
+ * Atomically increments the mutationVersion counter on a room document.
+ * Called after every successful edit_message or delete_message so that clients
+ * can detect stale caches on their next sync_room_cache RPC.
+ */
+export async function incrementMutationVersion(roomId: string): Promise<void> {
+  const db = await getDb();
+  await db.collection("rooms").updateOne(
+    { _id: new ObjectId(roomId) },
+    { $inc: { mutationVersion: 1 } }
+  );
+}
+
+export interface MutationPatches {
+  edits: Array<{
+    id: string;
+    ciphertext: string;
+    iv: string;
+    authTag: string;
+    editedAt: string;
+    editCount: number;
+    roomKeyVersion: number;
+    createdAt: string;
+    senderId: string;
+    roomId: string;
+    messageType: string;
+    senderName: string | null;
+    senderUserIndex: number | null;
+    senderPfp: string | null;
+    replyTo: any | null;
+  }>;
+  deletes: Array<{ messageId: string }>;
+}
+
+/**
+ * Given a list of message IDs that a client has cached, returns:
+ *  - `edits`:   messages that still exist but have a non-null editedAt (content changed)
+ *  - `deletes`: IDs that no longer exist in the DB (the message was deleted)
+ *
+ * Used by sync_room_cache when the client's mutationVersion is behind the server's.
+ */
+export async function fetchMutationPatches(
+  roomId: string,
+  cachedMessageIds: string[]
+): Promise<MutationPatches> {
+  if (cachedMessageIds.length === 0) return { edits: [], deletes: [] };
+
+  const db = await getDb();
+  const roomObjectId = new ObjectId(roomId);
+
+  // Validate IDs before converting to ObjectId
+  const validIds = cachedMessageIds.filter((id) => ObjectId.isValid(id));
+  const objectIds = validIds.map((id) => new ObjectId(id));
+
+  const found = await db
+    .collection("room_messages")
+    .find({ _id: { $in: objectIds }, roomId: roomObjectId })
+    .project({ _id: 1, ciphertext: 1, iv: 1, authTag: 1, editedAt: 1, editCount: 1, roomKeyVersion: 1, createdAt: 1, senderId: 1, messageType: 1, replyTo: 1 })
+    .toArray();
+
+  const foundIdSet = new Set(found.map((d: any) => d._id.toHexString()));
+
+  // Enrich found docs with sender info
+  const senderIds = [...new Set(found.map((d: any) => d.senderId.toHexString()))];
+  const senderObjectIds = senderIds.map((id) => new ObjectId(id));
+  const [users, memberships] = await Promise.all([
+    db.collection("user").find({ _id: { $in: senderObjectIds } }).project({ name: 1, email: 1, pfp: 1 }).toArray(),
+    db.collection("room_memberships").find({ roomId: roomObjectId, userId: { $in: senderObjectIds } }).project({ userId: 1, userIndex: 1 }).toArray(),
+  ]);
+  const userMap = new Map(users.map((u: any) => [u._id.toHexString(), u]));
+  const membershipMap = new Map(memberships.map((m: any) => [m.userId.toHexString(), m]));
+
+  const edits = found
+    .filter((d: any) => d.editedAt != null)
+    .map((d: any) => {
+      const sid = d.senderId.toHexString();
+      const user = userMap.get(sid);
+      const mem = membershipMap.get(sid);
+      const replyTo = d.replyTo
+        ? {
+            messageId: d.replyTo.messageId.toString(),
+            senderId: d.replyTo.senderId.toString(),
+            senderName: d.replyTo.senderName,
+            senderUserIndex: d.replyTo.senderUserIndex ?? null,
+            messageType: d.replyTo.messageType,
+            previewIv: d.replyTo.previewIv ?? null,
+            previewCiphertext: d.replyTo.previewCiphertext ?? null,
+            previewAuthTag: d.replyTo.previewAuthTag ?? null,
+          }
+        : null;
+      return {
+        id: d._id.toHexString(),
+        ciphertext: d.ciphertext as string,
+        iv: d.iv as string,
+        authTag: d.authTag as string,
+        editedAt: (d.editedAt instanceof Date ? d.editedAt : new Date(d.editedAt)).toISOString(),
+        editCount: typeof d.editCount === "number" ? d.editCount : 1,
+        roomKeyVersion: typeof d.roomKeyVersion === "number" ? d.roomKeyVersion : 0,
+        createdAt: (d.createdAt instanceof Date ? d.createdAt : new Date(d.createdAt)).toISOString(),
+        senderId: sid,
+        roomId,
+        messageType: d.messageType as string,
+        senderName: user?.name || user?.email || null,
+        senderUserIndex: mem?.userIndex ?? null,
+        senderPfp: (user?.pfp as string) ?? null,
+        replyTo,
+      };
+    });
+
+  const deletes = validIds
+    .filter((id) => !foundIdSet.has(id))
+    .map((id) => ({ messageId: id }));
+
+  return { edits, deletes };
+}
+

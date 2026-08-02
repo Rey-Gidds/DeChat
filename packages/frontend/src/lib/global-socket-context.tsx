@@ -12,6 +12,7 @@ import {
 import type { Socket } from "socket.io-client";
 import { useUnreadStore } from "@/lib/unread-store";
 import { useSWRConfig } from "swr";
+import { SWR_KEYS } from "@/lib/swr-config";
 import { connectAsUser } from "@/lib/socket-client";
 import { toast } from "sonner";
 
@@ -55,7 +56,7 @@ function revalidateRooms(mutate: ReturnType<typeof useSWRConfig>["mutate"]) {
 
 export function GlobalSocketProvider({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
-  const { mutate: globalMutate } = useSWRConfig();
+  const { mutate: globalMutate, cache: swrCache } = useSWRConfig();
   const { loadFromDB, increment, clear: clearUnread, versions, syncFromServer } = useUnreadStore();
 
   const [socketState, setSocket] = useState<Socket | null>(null);
@@ -146,10 +147,41 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
     const s = getGlobalSocket();
     if (!s) return;
 
-    const onUnreadIncrement = (p: { roomId: string; unreadCount: number; version: number; createdAt?: string | number }) => {
+    const onUnreadIncrement = (p: {
+      roomId: string;
+      unreadCount: number;
+      version: number;
+      createdAt?: string | number;
+      senderName?: string;
+      messageType?: string;
+    }) => {
       const ts = p.createdAt ? new Date(p.createdAt).getTime() : undefined;
       void increment(p.roomId, p.unreadCount, p.version, ts);
       revalidateRooms(globalMutate);
+
+      // ── Toast notification for new messages ────────────────────────
+      // Read room name directly from the SWR in-memory cache — no network call.
+      try {
+        const cached = swrCache.get(SWR_KEYS.myRooms());
+        const membershipMap = new Map<string, { room: { name: string } | null }>(
+          ((cached?.data as any)?.memberships ?? []).map(
+            (m: { roomId: string; room: { name: string } | null }) => [m.roomId, m]
+          )
+        );
+        const membership = membershipMap.get(p.roomId);
+        const roomName = membership?.room?.name ?? "a room";
+        const label =
+          p.messageType === "image" ? "sent an image" :
+          p.messageType === "video" ? "sent a video" :
+          p.messageType === "gif"   ? "sent a GIF"   :
+          "sent a message";
+        toast(`${p.senderName || "Someone"} ${label} in ${roomName}`, {
+          description: `Unread messages: ${p.unreadCount + 1}`,
+          duration: 4000,
+        });
+      } catch {
+        // Silently ignore — toast is best-effort
+      }
     };
 
     const onUnreadCountUpdated = (p: { roomId: string; unreadCount: number; version: number }) => {
@@ -166,16 +198,20 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
       toast.error(`You were removed from ${p.roomName || "a room"}`);
     };
 
-    const onMemberLeft = (p: { roomId: string; roomName?: string }) => {
+    const onMemberLeft = (p: { roomId: string; roomName?: string; reason?: string }) => {
       void clearUnread(p.roomId);
       revalidateRooms(globalMutate);
+      toast(`You left ${p.roomName || "a room"}`);
     };
 
-    const onMemberJoined = (p: { roomId: string; roomName?: string }) => {
+    const onMemberJoined = (p: { roomId: string; roomName?: string; memberCount?: number; status?: string }) => {
       void emitSubscribeRoom(s, p.roomId).catch((err) =>
         console.warn("[GlobalSocket] subscribe_room on join failed:", err)
       );
       revalidateRooms(globalMutate);
+      if (p.roomName) {
+        toast.success(`You joined ${p.roomName}`);
+      }
     };
 
     const onRoomDeleted = (p: { roomId: string; roomName?: string }) => {

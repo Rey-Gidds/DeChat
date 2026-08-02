@@ -5,7 +5,7 @@
 export const DB_NAME = "dechat-crypto-store";
 const STORE_NAME = "private-keys";
 const ROOM_KEY_STORE = "room-keys";
-export const DB_VERSION = 6;
+export const DB_VERSION = 7;
 const ROOM_KEY_VERSIONS_STORE = "room-key-versions";
 const OUTBOX_STORE = "message-outbox";
 const UNREAD_COUNTS_STORE = "unread-counts";

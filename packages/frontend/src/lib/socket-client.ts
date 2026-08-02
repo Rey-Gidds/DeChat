@@ -317,6 +317,41 @@ export async function syncGlobalSince(
   );
 }
 
+export interface SyncRoomCachePayload {
+  roomId: string;
+  newestCachedMessageId?: string;
+  newestCachedCreatedAt?: string;
+  mutationVersion: number;
+  cacheVersion: number;
+  cachedMessageIds: string[];
+}
+
+export interface MutationPatch {
+  edits: RealtimeRoomMessage[];
+  deletes: { messageId: string }[];
+}
+
+export interface SyncRoomCacheResponse {
+  ok: boolean;
+  error?: string;
+  strategy?: "UP_TO_DATE" | "DELTA" | "REPLACE";
+  messages?: RealtimeRoomMessage[];
+  mutationPatches?: MutationPatch;
+  serverMutationVersion?: number;
+}
+
+/**
+ * WebSocket RPC that replaces the HTTP resumeSync() call in the room bootstrap.
+ * Detects new messages AND edits/deletes via mutationVersion comparison.
+ * Uses the global socket (must be connected before calling).
+ */
+export async function syncRoomCache(
+  payload: SyncRoomCachePayload
+): Promise<SyncRoomCacheResponse> {
+  return emitWithGlobalAck<SyncRoomCacheResponse>("sync_room_cache", payload);
+}
+
+
 export async function emitTyping(roomId: string, preview?: string) {
   return emitWithAck<{ ok: boolean; error?: string }>("typing", { roomId, preview });
 }

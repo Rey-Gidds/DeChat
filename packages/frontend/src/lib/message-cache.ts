@@ -13,6 +13,10 @@ export interface RoomCacheMeta {
   oldestCachedCreatedAt: string; // ISO
   messageCount: number;
   lastAccessedAt: number; // epoch ms for LRU
+  // Version tracking fields (added in DB_VERSION 7)
+  mutationVersion?: number;  // server's mutationVersion at last sync
+  cacheVersion?: number;     // local counter, bumped on every cache write
+  lastSyncedAt?: number;     // epoch ms of last successful sync_room_cache RPC
 }
 
 function getDB(): Promise<IDBDatabase> {
@@ -80,6 +84,15 @@ async function updateCacheMeta(
   const oldest = messages[0];
   const newest = messages[messages.length - 1];
 
+  // Read existing meta to preserve version fields (mutationVersion, cacheVersion, lastSyncedAt)
+  const existing: RoomCacheMeta | undefined = await new Promise((resolve, reject) => {
+    const tx = db.transaction("room-cache-meta", "readonly");
+    const store = tx.objectStore("room-cache-meta");
+    const req = store.get(roomId);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
   const meta: RoomCacheMeta = {
     roomId,
     newestCachedMessageId: newest.id,
@@ -88,6 +101,10 @@ async function updateCacheMeta(
     oldestCachedCreatedAt: oldest.createdAt,
     messageCount: messages.length,
     lastAccessedAt: Date.now(),
+    // Preserve existing version fields — never overwrite them from a plain meta refresh
+    mutationVersion: existing?.mutationVersion,
+    cacheVersion: existing?.cacheVersion,
+    lastSyncedAt: existing?.lastSyncedAt,
   };
 
   return new Promise((resolve, reject) => {
@@ -288,3 +305,56 @@ export async function updateInCache(
     tx.onerror = () => reject(tx.error);
   });
 }
+
+/**
+ * Bumps the local cacheVersion counter for a room.
+ * Called after every cache write (new message, edit, delete) so the next
+ * sync_room_cache can detect that the client's cache has diverged from the
+ * server's mutationVersion.
+ */
+export async function incrementCacheVersion(roomId: string): Promise<void> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("room-cache-meta", "readwrite");
+    const store = tx.objectStore("room-cache-meta");
+    const req = store.get(roomId);
+    req.onsuccess = () => {
+      const meta = req.result as RoomCacheMeta | undefined;
+      if (meta) {
+        meta.cacheVersion = (meta.cacheVersion ?? 0) + 1;
+        store.put(meta);
+      }
+      resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Patches the room-cache-meta record with the server's mutationVersion and
+ * a lastSyncedAt timestamp after a successful sync_room_cache RPC.
+ * Does NOT touch the message boundary fields (newestCachedMessageId, etc.)
+ * — those are updated by updateCacheMeta via appendToCache / replaceCache.
+ */
+export async function storeRoomCacheMeta(
+  roomId: string,
+  patch: { mutationVersion: number; lastSyncedAt: number }
+): Promise<void> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("room-cache-meta", "readwrite");
+    const store = tx.objectStore("room-cache-meta");
+    const req = store.get(roomId);
+    req.onsuccess = () => {
+      const meta = req.result as RoomCacheMeta | undefined;
+      if (meta) {
+        meta.mutationVersion = patch.mutationVersion;
+        meta.lastSyncedAt = patch.lastSyncedAt;
+        store.put(meta);
+      }
+      resolve();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+

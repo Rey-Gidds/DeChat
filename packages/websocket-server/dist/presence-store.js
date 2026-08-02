@@ -15,6 +15,10 @@ const CLEANUP_INTERVAL_MS = 30_000; // scan for stale entries every 30s
 class InMemoryPresenceStore {
     /** roomId → userId → { connectionCount, lastHeartbeat } */
     state = new Map();
+    /** userId → lastHeartbeat (global socket presence) */
+    globalState = new Map();
+    /** roomId → userId → lastHeartbeat (viewing presence) */
+    viewingState = new Map();
     cleanupTimer = null;
     /** Start periodic heartbeat eviction. Call once when the server starts. */
     startCleanup(onStaleUsers) {
@@ -79,6 +83,9 @@ class InMemoryPresenceStore {
             return;
         entry.lastHeartbeat = Date.now();
     }
+    globalHeartbeat(userId) {
+        this.globalState.set(userId, Date.now());
+    }
     disconnectAll(userId) {
         const affected = [];
         for (const [roomId, room] of this.state) {
@@ -97,6 +104,12 @@ class InMemoryPresenceStore {
         if (!entry || entry.connectionCount <= 0)
             return false;
         return Date.now() - entry.lastHeartbeat < HEARTBEAT_DRIFT_MS;
+    }
+    isGloballyOnline(userId) {
+        const lastHb = this.globalState.get(userId);
+        if (!lastHb)
+            return false;
+        return Date.now() - lastHb < HEARTBEAT_DRIFT_MS;
     }
     count(roomId, userId) {
         return this.state.get(roomId)?.get(userId)?.connectionCount ?? 0;
@@ -139,6 +152,41 @@ class InMemoryPresenceStore {
             out[roomId] = inner;
         }
         return out;
+    }
+    // ── Viewing presence (Phase 4) ─────────────────────────────
+    viewingConnect(roomId, userId) {
+        let room = this.viewingState.get(roomId);
+        if (!room) {
+            room = new Map();
+            this.viewingState.set(roomId, room);
+        }
+        room.set(userId, Date.now());
+    }
+    viewingDisconnect(roomId, userId) {
+        const room = this.viewingState.get(roomId);
+        if (!room)
+            return;
+        room.delete(userId);
+        if (room.size === 0)
+            this.viewingState.delete(roomId);
+    }
+    viewingHeartbeat(roomId, userId) {
+        const room = this.viewingState.get(roomId);
+        if (!room)
+            return;
+        room.set(userId, Date.now());
+    }
+    viewingUsers(roomId) {
+        const now = Date.now();
+        const room = this.viewingState.get(roomId);
+        if (!room)
+            return new Set();
+        const viewers = new Set();
+        for (const [userId, lastHb] of room) {
+            if (now - lastHb < HEARTBEAT_DRIFT_MS)
+                viewers.add(userId);
+        }
+        return viewers;
     }
 }
 exports.InMemoryPresenceStore = InMemoryPresenceStore;

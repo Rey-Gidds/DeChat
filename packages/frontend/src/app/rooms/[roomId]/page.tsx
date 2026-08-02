@@ -19,6 +19,7 @@ import {
   type TypingSnapshotPayload,
   USE_GLOBAL_SOCKET,
   setGlobalActiveRoomId,
+  syncRoomCache,
 } from "@/lib/socket-client";
 import { useGlobalSocket } from "@/lib/global-socket-context";
 import { toast } from "sonner";
@@ -54,6 +55,8 @@ import {
   evictLRURooms,
   removeFromCache,
   updateInCache,
+  incrementCacheVersion,
+  storeRoomCacheMeta,
   CACHE_WINDOW_SIZE,
   MAX_CACHED_ROOMS,
 } from "@/lib/message-cache";
@@ -307,6 +310,9 @@ export default function RoomChatPage() {
   const [status, setStatus] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [cacheServed, setCacheServed] = useState(false);
+
+  // Keep the ref in sync with state so closures always have the latest value
+  useEffect(() => { isBootstrappingRef.current = isBootstrapping; }, [isBootstrapping]);
   const [isColdStart, setIsColdStart] = useState(false);
   const [roomMeta, setRoomMeta] = useState<RoomMeta | null>(null);
 
@@ -441,6 +447,15 @@ export default function RoomChatPage() {
   const lastTypingEmitRef = useRef<number>(0);
   const TYPING_THROTTLE_MS = 300;
   const listRef = useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = useRef(true);
+  const lastMessageRef = useRef<{ createdAt: string; id: string } | null>(null);
+  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Bootstrap safety: messages arriving via socket while Phase 0→3 are in flight
+  // are queued here and merged into state during Phase 3 to avoid overwrites.
+  const pendingLiveMessagesRef = useRef<RealtimeRoomMessage[]>([]);
+  // Ref mirror of isBootstrapping state so socket-handler closures always read latest.
+  const isBootstrappingRef = useRef(true);
+
   const setListRef = useCallback(
     (el: HTMLDivElement | null) => {
       (listRef as any).current = el;
@@ -451,9 +466,6 @@ export default function RoomChatPage() {
     },
     [messages.length]
   );
-  const shouldStickToBottomRef = useRef(true);
-  const lastMessageRef = useRef<{ createdAt: string; id: string } | null>(null);
-  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const typingSummary =
     typingUsers.length === 0
@@ -746,20 +758,71 @@ export default function RoomChatPage() {
           }
         }
 
-        // Phase 1: Parallel async fetches (excluding socket connect to load cached data fast)
+        // Phase 1: Parallel async fetches
+        // Prefer the WebSocket RPC (sync_room_cache) for fresh mutation tracking.
+        // Falls back to the HTTP resumeSync() if the global socket isn't ready yet.
         const cacheMeta = await getRoomCacheMeta(roomId);
         const newestCachedMessageId = cacheMeta?.newestCachedMessageId || undefined;
         const newestCachedCreatedAt = cacheMeta?.newestCachedCreatedAt || undefined;
 
+        // Reset the pending-live-messages queue right before the sync RPC
+        // so that any messages arriving during the RPC round-trip are captured.
+        pendingLiveMessagesRef.current = [];
+
         let resumeFetchFailed = false;
-        const [metaRes, membershipRes, resumeRes] = await Promise.all([
+        let wsResumeRes: { strategy: "UP_TO_DATE" | "DELTA" | "REPLACE"; messages: RealtimeRoomMessage[]; mutationPatches?: { edits: RealtimeRoomMessage[]; deletes: { messageId: string }[] }; serverMutationVersion?: number } | null = null;
+
+        // Attempt WS RPC first (requires global socket to be connected)
+        if (USE_GLOBAL_SOCKET && gsSocket?.connected) {
+          try {
+            const cachedMessages = await getCachedMessages(roomId);
+            const cachedMessageIds = cachedMessages.map((m) => m.id).slice(0, 100);
+            const rpcRes = await syncRoomCache({
+              roomId,
+              newestCachedMessageId,
+              newestCachedCreatedAt,
+              mutationVersion: cacheMeta?.mutationVersion ?? 0,
+              cacheVersion: cacheMeta?.cacheVersion ?? 0,
+              cachedMessageIds,
+            });
+            if (rpcRes.ok && rpcRes.strategy) {
+              wsResumeRes = {
+                strategy: rpcRes.strategy,
+                messages: rpcRes.messages ?? [],
+                mutationPatches: rpcRes.mutationPatches,
+                serverMutationVersion: rpcRes.serverMutationVersion,
+              };
+            } else {
+              resumeFetchFailed = true;
+            }
+          } catch {
+            resumeFetchFailed = true;
+          }
+        }
+
+        // Parallel HTTP fetches (room meta + membership); HTTP resumeSync as fallback
+        let httpResumePromise: Promise<{ strategy: "UP_TO_DATE" | "DELTA" | "REPLACE"; messages: RealtimeRoomMessage[] }> | null = null;
+        if (!wsResumeRes && !resumeFetchFailed) {
+          // WS path wasn't taken at all (socket not connected yet) — use HTTP
+          httpResumePromise = resumeSync(roomId, newestCachedMessageId, newestCachedCreatedAt).catch(() => {
+            resumeFetchFailed = true;
+            return { strategy: "REPLACE" as const, messages: [] as RealtimeRoomMessage[] };
+          });
+        } else if (!wsResumeRes && resumeFetchFailed) {
+          // WS RPC failed — fall back to HTTP
+          httpResumePromise = resumeSync(roomId, newestCachedMessageId, newestCachedCreatedAt).catch(() => {
+            return { strategy: "REPLACE" as const, messages: [] as RealtimeRoomMessage[] };
+          });
+          resumeFetchFailed = false; // HTTP is the actual attempt now
+        }
+
+        const [metaRes, membershipRes, httpResumeRes] = await Promise.all([
           fetch(`/api/rooms/${roomId}`, { credentials: "include" }),
           fetch(`/api/rooms/${roomId}/membership`, { credentials: "include" }),
-          resumeSync(roomId, newestCachedMessageId, newestCachedCreatedAt).catch(() => {
-            resumeFetchFailed = true;
-            return { strategy: "REPLACE" as const, messages: [] };
-          }),
+          httpResumePromise ?? Promise.resolve(null),
         ]);
+
+        const resumeRes = wsResumeRes ?? httpResumeRes ?? { strategy: "REPLACE" as const, messages: [] as RealtimeRoomMessage[] };
 
         const metaData = (await metaRes.json()) as RoomMeta & { error?: string };
         if (!metaRes.ok) throw new Error(metaData.error || "Failed to load room");
@@ -864,20 +927,55 @@ export default function RoomChatPage() {
         } else if (resume.strategy === "DELTA") {
           // Has new messages — always merge deltas even if Phase 0 was correct.
           const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
+          const pendingLive = await decryptBatch(pendingLiveMessagesRef.current, membership.userId, roomId);
+          pendingLiveMessagesRef.current = [];
           if (!usedCorrectUserId) {
             const updatedCache = await decryptBatch(cached, membership.userId, roomId);
-            setMessages(mergeMessages(mergeMessages(updatedCache, decrypted), currentOptimistic));
+            setMessages(mergeMessages(mergeMessages(mergeMessages(updatedCache, decrypted), pendingLive), currentOptimistic));
           } else {
-            setMessages(mergeMessages(mergeMessages(decryptedCache, decrypted), currentOptimistic));
+            setMessages(mergeMessages(mergeMessages(mergeMessages(decryptedCache, decrypted), pendingLive), currentOptimistic));
           }
           await appendToCache(roomId, resume.messages, CACHE_WINDOW_SIZE);
           await evictLRURooms(MAX_CACHED_ROOMS);
+          void incrementCacheVersion(roomId);
+
+          // Apply mutation patches (edits + deletes) if present
+          const patches = (resume as any).mutationPatches as { edits: RealtimeRoomMessage[]; deletes: { messageId: string }[] } | undefined;
+          if (patches) {
+            if (patches.edits.length > 0) {
+              const editDecrypted = await decryptBatch(patches.edits, membership.userId, roomId);
+              const editMap = new Map(editDecrypted.map((m) => [m.id, m]));
+              setMessages((prev) => prev.map((m) => editMap.get(m.id) ?? m));
+              for (const edit of patches.edits) {
+                void updateInCache(roomId, edit.id, { ciphertext: edit.ciphertext, iv: edit.iv, authTag: edit.authTag, editedAt: edit.editedAt, editCount: edit.editCount });
+              }
+            }
+            if (patches.deletes.length > 0) {
+              const deleteIds = new Set(patches.deletes.map((d) => d.messageId));
+              setMessages((prev) => prev.filter((m) => !deleteIds.has(m.id)));
+              for (const d of patches.deletes) {
+                void removeFromCache(roomId, d.messageId);
+              }
+            }
+            if (patches.edits.length > 0 || patches.deletes.length > 0) {
+              void incrementCacheVersion(roomId);
+            }
+          }
         } else {
           // REPLACE — genuine server-driven replacement (cold start or large gap).
           const currentOptimistic = await loadOptimisticMessages(roomId, membership.userId);
-          setMessages(mergeMessages(decrypted, currentOptimistic));
+          const pendingLive = await decryptBatch(pendingLiveMessagesRef.current, membership.userId, roomId);
+          pendingLiveMessagesRef.current = [];
+          setMessages(mergeMessages(mergeMessages(decrypted, pendingLive), currentOptimistic));
           await replaceCache(roomId, resume.messages);
           await evictLRURooms(MAX_CACHED_ROOMS);
+          void incrementCacheVersion(roomId);
+        }
+
+        // Persist the server's mutationVersion for future sync comparisons
+        const serverMutationVersion = (resume as any).serverMutationVersion as number | undefined;
+        if (typeof serverMutationVersion === "number") {
+          void storeRoomCacheMeta(roomId, { mutationVersion: serverMutationVersion, lastSyncedAt: Date.now() });
         }
 
         if (decrypted.length > 0) {
@@ -1063,14 +1161,25 @@ export default function RoomChatPage() {
               });
               if (res.ok) {
                 if (res.message) {
-                  const decryptedBody = await decryptMessage(res.message, roomKey);
-                  reconcileOptimisticMessage(
-                    entry.clientMessageId,
-                    res.message,
-                    decryptedBody,
-                    membership.userId!,
-                    setMessages
-                  );
+                  if (isBootstrappingRef.current) {
+                    pendingLiveMessagesRef.current.push(res.message);
+                    const clientMsgId = entry.clientMessageId;
+                    void (async () => {
+                      while (isBootstrappingRef.current) {
+                        await new Promise((r) => setTimeout(r, 100));
+                      }
+                      await deleteOutboxEntry(clientMsgId);
+                    })();
+                  } else {
+                    const decryptedBody = await decryptMessage(res.message, roomKey);
+                    reconcileOptimisticMessage(
+                      entry.clientMessageId,
+                      res.message,
+                      decryptedBody,
+                      membership.userId!,
+                      setMessages
+                    );
+                  }
                 }
                 return "sent";
               }
@@ -1086,6 +1195,10 @@ export default function RoomChatPage() {
 
           socket.on("room_message", async (incoming: RealtimeRoomMessage) => {
             if (incoming.roomId !== roomId) return;
+            if (isBootstrappingRef.current) {
+              pendingLiveMessagesRef.current.push(incoming);
+              return;
+            }
 
             // Reconcile optimistic
             if (incoming.senderId === membership.userId) {
@@ -1139,6 +1252,7 @@ export default function RoomChatPage() {
 
             // Update IndexedDB sliding cache
             await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
+            void incrementCacheVersion(roomId);
           });
 
           socket.on("message_edited", async (incoming: RealtimeRoomMessage) => {
@@ -1168,6 +1282,15 @@ export default function RoomChatPage() {
                     : m
                 )
               );
+              // Keep the cache in sync so the edit is visible on next room open
+              void updateInCache(roomId, incoming.id, {
+                ciphertext: incoming.ciphertext,
+                iv: incoming.iv,
+                authTag: incoming.authTag,
+                editedAt: incoming.editedAt,
+                editCount: incoming.editCount,
+              });
+              void incrementCacheVersion(roomId);
             } catch {
               // silently ignore
             }
@@ -1179,6 +1302,7 @@ export default function RoomChatPage() {
             // Also purge from persisted cache so the deleted message never
             // reappears when the user rejoins the room.
             void removeFromCache(roomId, payload.messageId);
+            void incrementCacheVersion(roomId);
           });
 
           socket.on("typing_started", (payload: TypingEventPayload) => {
@@ -1386,8 +1510,19 @@ export default function RoomChatPage() {
         });
         if (res.ok) {
           if (res.message) {
-            const decryptedBody = await decryptMessage(res.message, roomKey);
-            reconcileOptimisticMessage(entry.clientMessageId, res.message, decryptedBody, currentUserId, setMessages);
+            if (isBootstrappingRef.current) {
+              pendingLiveMessagesRef.current.push(res.message);
+              const clientMsgId = entry.clientMessageId;
+              void (async () => {
+                while (isBootstrappingRef.current) {
+                  await new Promise((r) => setTimeout(r, 50));
+                }
+                await deleteOutboxEntry(clientMsgId);
+              })();
+            } else {
+              const decryptedBody = await decryptMessage(res.message, roomKey);
+              reconcileOptimisticMessage(entry.clientMessageId, res.message, decryptedBody, currentUserId, setMessages);
+            }
           }
           return "sent";
         }
@@ -1403,6 +1538,10 @@ export default function RoomChatPage() {
 
     const onRoomMessage = async (incoming: RealtimeRoomMessage) => {
       if (incoming.roomId !== roomId) return;
+      if (isBootstrappingRef.current) {
+        pendingLiveMessagesRef.current.push(incoming);
+        return;
+      }
       if (incoming.senderId === currentUserId) {
         const clientMsgId = incoming.clientMessageId;
         if (clientMsgId) {
@@ -1425,6 +1564,7 @@ export default function RoomChatPage() {
       setNewMessagesCount((prev) => prev + 1);
       await appendDecrypted([incoming], false);
       await appendToCache(roomId, [incoming], CACHE_WINDOW_SIZE);
+      void incrementCacheVersion(roomId);
     };
 
     const onMessageEdited = async (incoming: RealtimeRoomMessage) => {
@@ -1441,6 +1581,15 @@ export default function RoomChatPage() {
               : m
           )
         );
+        // Keep the cache in sync so the edit is visible on next room open
+        void updateInCache(roomId, incoming.id, {
+          ciphertext: incoming.ciphertext,
+          iv: incoming.iv,
+          authTag: incoming.authTag,
+          editedAt: incoming.editedAt,
+          editCount: incoming.editCount,
+        });
+        void incrementCacheVersion(roomId);
       } catch {}
     };
 
@@ -1448,6 +1597,7 @@ export default function RoomChatPage() {
       if (payload.roomId !== roomId) return;
       setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
       void removeFromCache(roomId, payload.messageId);
+      void incrementCacheVersion(roomId);
     };
 
     const onTypingStarted = (payload: TypingEventPayload) => {
@@ -1745,7 +1895,139 @@ export default function RoomChatPage() {
       }
     }
   }
-
+  async function sendReplyTextMessage(replyToMsg: UiMessage, text: string) {
+    if (!roomId || !text.trim()) return;
+    if (roomDisabled) return;
+    const clientMessageId = crypto.randomUUID();
+    const displayBody = text.trim();
+    let entryWritten = false;
+    const preview = replyToMsg.body.slice(0, 80);
+    const replyContextInfo = {
+      messageId: replyToMsg.id,
+      senderId: replyToMsg.senderId,
+      senderName: replyToMsg.senderName || "Anonymous",
+      messageType: replyToMsg.messageType || "text",
+      preview,
+    };
+    if (isRotating) {
+      const entry: OutboxEntry = {
+        clientMessageId,
+        roomId,
+        ciphertext: "",
+        iv: "",
+        authTag: "",
+        roomKeyVersion: roomKeyRotation.currentKeyVersion,
+        isRotationQueued: true,
+        plaintextBody: displayBody,
+        messageType: "text",
+        displayBody,
+        senderId: currentUserId,
+        status: "PENDING",
+        retryCount: 0,
+        nextRetryAt: Number.MAX_SAFE_INTEGER,
+        maxRetries: 5,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        replyTo: {
+          messageId: replyContextInfo.messageId,
+          senderId: replyContextInfo.senderId,
+          senderName: replyContextInfo.senderName,
+          senderUserIndex: null,
+          messageType: replyContextInfo.messageType,
+          previewIv: null,
+          previewCiphertext: null,
+          previewAuthTag: null,
+        },
+        replyToPlaintextPreview: replyContextInfo.preview,
+      };
+      await addOutboxEntry(entry);
+      setMessages((prev) => [...prev, buildOptimisticUiMessage(entry, currentUserId)]);
+      setIsAtBottom(true);
+      setNewMessagesCount(0);
+      setNewerCursor(null);
+      setHasNewer(false);
+      requestAnimationFrame(() => scrollToBottom("smooth"));
+      return;
+    }
+    try {
+      const roomKey = await getRoomKeyVersion(roomId, roomKeyRotation.currentKeyVersion);
+      if (!roomKey) throw new Error("Room key not available");
+      const encrypted = await encryptMessage(displayBody, roomKey);
+      const previewEncrypted = await encryptMessagePreview(
+        replyContextInfo.preview,
+        replyContextInfo.messageType,
+        roomKey
+      );
+      const replyPayload = {
+        messageId: replyContextInfo.messageId,
+        senderId: replyContextInfo.senderId,
+        senderName: replyContextInfo.senderName,
+        senderUserIndex: null,
+        messageType: replyContextInfo.messageType,
+        previewIv: previewEncrypted.previewIv,
+        previewCiphertext: previewEncrypted.previewCiphertext,
+        previewAuthTag: previewEncrypted.previewAuthTag,
+        previewKeyVersion: roomKeyRotation.currentKeyVersion,
+      };
+      const entry: OutboxEntry = {
+        clientMessageId,
+        roomId,
+        ciphertext: encrypted.ciphertext,
+        iv: encrypted.iv,
+        authTag: encrypted.authTag,
+        roomKeyVersion: roomKeyRotation.currentKeyVersion,
+        isRotationQueued: false,
+        messageType: "text",
+        displayBody,
+        senderId: currentUserId,
+        status: "PENDING",
+        retryCount: 0,
+        nextRetryAt: Date.now() + 10_000,
+        maxRetries: 5,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        replyTo: replyPayload,
+      };
+      await addOutboxEntry(entry);
+      entryWritten = true;
+      setMessages((prev) => [...prev, buildOptimisticUiMessage(entry, currentUserId)]);
+      setIsAtBottom(true);
+      setNewMessagesCount(0);
+      setNewerCursor(null);
+      setHasNewer(false);
+      requestAnimationFrame(() => scrollToBottom("smooth"));
+      const response = await sendEncryptedMessage({
+        roomId,
+        clientMessageId,
+        ...encrypted,
+        roomKeyVersion: roomKeyRotation.currentKeyVersion,
+        messageType: "text",
+        replyTo: replyPayload,
+      });
+      if (!response.ok) throw new Error(response.error || "Failed to send message");
+      if (response.message) {
+        const decryptedBody = await decryptMessage(response.message, roomKey);
+        await deleteOutboxEntry(clientMessageId);
+        reconcileOptimisticMessage(clientMessageId, response.message, decryptedBody, currentUserId, setMessages);
+      } else {
+        await deleteOutboxEntry(clientMessageId);
+      }
+    } catch (err) {
+      if (entryWritten) {
+        await updateOutboxEntry(clientMessageId, {
+          status: "RETRYING",
+          retryCount: 1,
+          nextRetryAt: Date.now() + 5_000,
+          updatedAt: Date.now(),
+        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === `optimistic:${clientMessageId}` ? { ...m, status: "retrying" } : m
+          )
+        );
+      }
+    }
+  }
   // ── Edit message ──
   async function handleSaveEdit() {
     if (!roomId || !editingMessageId || !editingDraft.trim()) return;
@@ -2587,9 +2869,15 @@ export default function RoomChatPage() {
           roomKey={roomKeyRef.current ?? undefined}
           open={Boolean(viewerMessageId)}
           onClose={() => setViewerMessageId(null)}
-          onReply={(messageId) => {
+          onReply={(messageId, replyText) => {
             const msg = messages.find((m) => m.id === messageId);
-            if (msg) handleReply(msg);
+            if (msg) {
+              if (replyText && replyText.trim()) {
+                void sendReplyTextMessage(msg, replyText.trim());
+              } else {
+                handleReply(msg);
+              }
+            }
             setViewerMessageId(null);
           }}
         />
