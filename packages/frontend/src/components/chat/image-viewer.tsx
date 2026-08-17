@@ -5,7 +5,6 @@ import {
   ArrowUp,
   Download,
   Loader2,
-  SendHorizonal,
   X,
   ZoomIn,
   ZoomOut,
@@ -212,27 +211,27 @@ export function ImageViewer({
       aria-label={mode === "send" ? "Send media preview" : "Image viewer"}
     >
       {/* ── Top bar ── */}
-      <div className="flex shrink-0 items-center justify-between px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between bg-black/60 px-4 py-3 backdrop-blur-sm">
         <button
           type="button"
           onClick={onClose}
           disabled={mode === "send" && sending}
-          className="flex h-10 w-10 items-center justify-center text-neutral-400 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-neutral-400 hover:bg-neutral-800 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
           aria-label="Close"
         >
-          <X size={22} />
+          <X size={18} />
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {/* Zoom controls */}
           <button
             type="button"
             onClick={zoomOut}
             disabled={scaleIndex === 0}
-            className="flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Zoom out"
           >
-            <ZoomOut size={18} />
+            <ZoomOut size={17} />
           </button>
           <span className="min-w-[3ch] text-center text-xs text-neutral-500 tabular-nums">
             {currentScale}×
@@ -241,10 +240,10 @@ export function ImageViewer({
             type="button"
             onClick={zoomIn}
             disabled={scaleIndex >= ZOOM_LEVELS.length - 1}
-            className="flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
             aria-label="Zoom in"
           >
-            <ZoomIn size={18} />
+            <ZoomIn size={17} />
           </button>
 
           {/* Download — view mode only */}
@@ -253,10 +252,10 @@ export function ImageViewer({
               type="button"
               onClick={handleDownload}
               disabled={!remoteBlobUrl}
-              className="flex h-9 w-9 items-center justify-center text-neutral-400 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-900 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               aria-label="Download image"
             >
-              <Download size={18} />
+              <Download size={17} />
             </button>
           )}
         </div>
@@ -279,7 +278,7 @@ export function ImageViewer({
             <button
               type="button"
               onClick={retry}
-              className="border border-neutral-700 px-4 py-1.5 text-[10px] uppercase tracking-wider text-neutral-400 hover:border-neutral-500 hover:text-white transition-colors"
+              className="rounded-xl border border-neutral-700 px-4 py-1.5 text-xs font-medium text-neutral-400 hover:border-neutral-500 hover:text-white transition-all"
             >
               Retry
             </button>
@@ -313,13 +312,13 @@ export function ImageViewer({
 
       {/* ── Bottom bar ── */}
       <div
-        className="shrink-0 border-t border-neutral-800 bg-black px-4 py-3"
+        className="shrink-0 border-t border-neutral-800/60 bg-black/70 backdrop-blur-sm px-4 py-3"
         style={{ paddingBottom: `calc(12px + ${keyboardOffset}px)` }}
       >
         {mode === "view" ? (
           /* View mode: reply input */
           <div className="flex items-center gap-2">
-            <div className="flex min-h-[44px] flex-1 items-center border border-neutral-700 bg-neutral-900 px-3 py-2 transition-colors focus-within:border-white">
+            <div className="flex min-h-[44px] flex-1 items-center rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 transition-colors focus-within:border-neutral-500">
               <input
                 ref={replyInputRef}
                 type="text"
@@ -336,17 +335,17 @@ export function ImageViewer({
               type="button"
               onClick={handleReplySend}
               disabled={!replyText.trim() || sendingReply}
-              className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Send reply"
             >
-              <SendHorizonal size={20} />
+              <ArrowUp size={18} />
             </button>
           </div>
         ) : (
           /* Send mode: caption input + send button */
           <div className="flex items-end gap-2">
             <div
-              className="flex min-h-[44px] flex-1 items-end border border-neutral-700 bg-neutral-900 px-3 py-2 transition-colors focus-within:border-white"
+              className="flex min-h-[44px] flex-1 items-end rounded-2xl border border-neutral-700 bg-neutral-900 px-4 py-2 transition-colors focus-within:border-neutral-500"
               style={{ alignSelf: "flex-end" }}
             >
               <textarea
@@ -373,13 +372,13 @@ export function ImageViewer({
               onClick={handleSendClick}
               disabled={!file || sending}
               style={{ alignSelf: "flex-end" }}
-              className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Send media"
             >
               {sending ? (
-                <Loader2 size={20} className="animate-spin" />
+                <Loader2 size={18} className="animate-spin" />
               ) : (
-                <ArrowUp size={20} />
+                <ArrowUp size={18} />
               )}
             </button>
           </div>

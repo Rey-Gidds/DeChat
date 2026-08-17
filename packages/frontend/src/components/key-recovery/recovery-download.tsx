@@ -46,48 +46,46 @@ export function RecoveryDownload({ userId, privateKey, onComplete }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Error */}
       {error && (
-        <div className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+          <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="bg-neutral-800 border border-neutral-700 p-4 text-xs text-neutral-400 leading-relaxed uppercase tracking-wider">
+      {/* Info banner */}
+      <div className="rounded-xl border border-neutral-700 bg-neutral-800/60 p-4 text-xs leading-relaxed text-neutral-400">
         If you clear browser data, your local private key will be lost. Protect your identity by
-        downloading an encrypted <strong>Recovery Kit</strong>.
+        downloading an encrypted <strong className="text-neutral-200">Recovery Kit</strong>.
       </div>
 
+      {/* Passphrase input */}
       <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor="rd-passphrase"
-          className="text-neutral-400 text-xs font-semibold uppercase tracking-wider"
-        >
-          Passphrase for Key Encryption
+        <label htmlFor="rd-passphrase" className="text-[10px] uppercase tracking-wider text-neutral-500">
+          Passphrase for key encryption
         </label>
         <div className="relative">
-          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
+          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
           <input
             id="rd-passphrase"
             type="password"
             autoComplete="off"
             value={passphrase}
             onChange={(e) => setPassphrase(e.target.value)}
-            placeholder="Enter a strong passphrase (min 8 chars)"
-            className="w-full bg-black border border-neutral-800 py-3 pl-11 pr-4 text-white text-sm outline-none focus:border-neutral-600 transition-colors"
+            placeholder="Min 8 characters"
+            className="w-full rounded-xl border border-neutral-700 bg-neutral-800 py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-neutral-500 transition-colors"
           />
         </div>
       </div>
 
+      {/* Confirm passphrase input */}
       <div className="flex flex-col gap-1.5">
-        <label
-          htmlFor="rd-confirm"
-          className="text-neutral-400 text-xs font-semibold uppercase tracking-wider"
-        >
-          Confirm Passphrase
+        <label htmlFor="rd-confirm" className="text-[10px] uppercase tracking-wider text-neutral-500">
+          Confirm passphrase
         </label>
         <div className="relative">
-          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
+          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-600" />
           <input
             id="rd-confirm"
             type="password"
@@ -95,28 +93,27 @@ export function RecoveryDownload({ userId, privateKey, onComplete }: Props) {
             value={confirmPassphrase}
             onChange={(e) => setConfirmPassphrase(e.target.value)}
             placeholder="Re-enter passphrase"
-            className="w-full bg-black border border-neutral-800 py-3 pl-11 pr-4 text-white text-sm outline-none focus:border-neutral-600 transition-colors"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleDownload();
-            }}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleDownload(); }}
+            className="w-full rounded-xl border border-neutral-700 bg-neutral-800 py-3 pl-11 pr-4 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-neutral-500 transition-colors"
           />
         </div>
       </div>
 
+      {/* Download button */}
       <button
-        onClick={handleDownload}
+        onClick={() => void handleDownload()}
         disabled={loading}
-        className="w-full bg-white text-black font-semibold py-3 mt-2 hover:bg-neutral-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {loading ? (
-          <span className="flex items-center gap-2">
-            <span className="inline-block w-4 h-4 border-2 border-black border-t-transparent animate-spin" />
+          <>
+            <span className="inline-block h-4 w-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
             Encrypting...
-          </span>
+          </>
         ) : (
           <>
-            <Download className="w-4 h-4" />
-            <span>Download Recovery Kit</span>
+            <Download className="h-4 w-4" />
+            Download Recovery Kit
           </>
         )}
       </button>

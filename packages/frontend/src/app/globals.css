@@ -6,27 +6,34 @@
   --background: #000000;
   --foreground: #e5e5e5;
   --surface: #0a0a0a;
-  --surface-raised: #111111;
+  --surface-raised: #141414;
   --border: #262626;
   --muted: #737373;
   --dim: #525252;
+
+  /* Chat-specific */
+  --chat-bg: #111111;
+  --bubble-own: #ffffff;
+  --bubble-own-text: #000000;
+  --bubble-other: #1e1e1e;
+  --bubble-other-text: #e5e5e5;
+  --bubble-radius: 18px;
+  --bubble-radius-sm: 4px;
 }
 
 body {
   color: var(--foreground);
   background-color: var(--background);
   font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  /* Prevent iOS rubber-band scroll from revealing the gap below the input */
   overscroll-behavior: none;
-  /* Ensure the body never causes an accidental bounce scroll */
   overflow: hidden;
   position: fixed;
   width: 100%;
 }
 
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
@@ -34,11 +41,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333333;
+  background: #2a2a2a;
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444444;
+  background: #3a3a3a;
 }
 
 ::selection {
@@ -46,31 +54,88 @@ body {
   color: #000000;
 }
 
-/* Grid blueprint pattern for chat background */
+/* Chat message area background — subtle warm grey, no grid */
+.bg-chat-area {
+  background-color: var(--chat-bg);
+}
+
+/* Legacy grid blueprint kept but unused now */
 .bg-grid-blueprint {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size:
-    100px 100px,
-    100px 100px,
-    20px 20px,
-    20px 20px;
-  background-position:
-    0 0,
-    0 0,
-    -1px -1px,
-    -1px -1px;
+  background-color: var(--chat-bg);
 }
 
 /* Prevent scroll jumping in message list */
 .message-list-container {
-  overflow-anchor: none; /* disable on container */
+  overflow-anchor: none;
 }
 
 #scroll-anchor {
   overflow-anchor: auto;
 }
 
+/* Smooth bubble appear animation */
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.bubble-animate {
+  animation: bubble-in 0.15s ease-out;
+}
+
+/* Modern context menu / sheet transitions */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menu-animate {
+  animation: menu-in 0.15s ease-out;
+}
+
+/* Typing indicator bounce for room cards */
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Instagram-style typing pulse animation */
+@keyframes typingPulse {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.25);
+    opacity: 1;
+  }
+}
+.animate-typing-dot-1 {
+  animation: typingPulse 1.0s infinite ease-in-out;
+}
+.animate-typing-dot-2 {
+  animation: typingPulse 1.0s infinite ease-in-out;
+  animation-delay: 0.15s;
+}
+.animate-typing-dot-3 {
+  animation: typingPulse 1.0s infinite ease-in-out;
+  animation-delay: 0.3s;
+}

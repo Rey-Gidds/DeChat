@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders, invalidateCachedSession } from "@/lib/api-auth";
 import { ensureMongoConnected } from "@/lib/mongodb";
 
 const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1 MB
@@ -57,7 +57,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, pfp: image });
+    // Invalidate cached session so the next request sees the updated pfp.
+    return invalidateCachedSession(
+      NextResponse.json({ ok: true, pfp: image }),
+      req
+    );
   } catch (err) {
     console.error("PFP upload error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -76,7 +80,11 @@ export async function DELETE(req: Request) {
       { $unset: { pfp: "" } }
     );
 
-    return NextResponse.json({ ok: true });
+    // Invalidate cached session so the next request sees the removed pfp.
+    return invalidateCachedSession(
+      NextResponse.json({ ok: true }),
+      req
+    );
   } catch (err) {
     console.error("PFP delete error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

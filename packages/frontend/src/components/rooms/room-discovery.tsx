@@ -95,11 +95,11 @@ function TagFilter({
         {selectedTags.map((t) => (
           <span
             key={t}
-            className="inline-flex items-center gap-1 border border-white bg-white px-2 py-1 text-[10px] uppercase tracking-wider text-black"
+            className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800 px-3 py-1 text-[11px] font-medium text-neutral-300"
           >
             {t}
-            <button onClick={() => remove(t)} className="hover:opacity-60" aria-label={`Remove ${t}`}>
-              <X size={10} strokeWidth={3} />
+            <button onClick={() => remove(t)} className="text-neutral-500 hover:text-white transition-colors" aria-label={`Remove ${t}`}>
+              <X size={12} />
             </button>
           </span>
         ))}
@@ -110,16 +110,16 @@ function TagFilter({
             onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
             onKeyDown={handleKeyDown}
             placeholder={selectedTags.length === 0 ? "Search or type tags..." : "Add more..."}
-            className="w-full border border-neutral-800 bg-black px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-white outline-none focus:border-neutral-500 placeholder:text-neutral-600"
+            className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-white outline-none focus:border-neutral-600 placeholder:text-neutral-600 transition-colors"
           />
           {open && suggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto border border-neutral-800 bg-neutral-950 shadow-xl">
+            <div className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-xl border border-neutral-800 bg-neutral-900 shadow-xl overflow-hidden">
               {suggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
                   onClick={() => add(s)}
-                  className="w-full px-3 py-2 text-left text-[10px] uppercase tracking-wider text-neutral-400 hover:bg-neutral-900 hover:text-white transition"
+                  className="w-full px-3.5 py-2.5 text-left text-xs text-neutral-300 hover:bg-neutral-800 hover:text-white transition"
                 >
                   {s}
                 </button>
@@ -338,25 +338,44 @@ export function RoomDiscovery() {
         </div>
       )}
 
-      <div className="mb-6 space-y-4">
+      <div className="mb-6">
         {/* Search bar + Trending / Most Used buttons */}
         <div className="flex items-start gap-2 sm:items-center">
           <div className="relative flex-1">
             <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"
+              size={14}
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500"
             />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search Rooms..."
-              className="w-full border border-neutral-800 bg-black py-3 pl-10 pr-4 text-sm text-white outline-none focus:border-neutral-500"
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-900 py-3 pl-10 pr-4 text-xs text-white outline-none focus:border-neutral-600 transition-colors"
             />
           </div>
           <TrendingTags onSelect={addTag} selectedTags={selectedTags} />
         </div>
 
-        <TagFilter selectedTags={selectedTags} onChange={setSelectedTags} />
+        {/* Selected tag chips */}
+        {selectedTags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {selectedTags.map((t) => (
+              <span
+                key={t}
+                className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-800 px-3 py-1 text-[11px] font-medium text-neutral-300"
+              >
+                {t}
+                <button
+                  onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}
+                  className="text-neutral-500 hover:text-white transition-colors"
+                  aria-label={`Remove ${t}`}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && (
@@ -366,11 +385,11 @@ export function RoomDiscovery() {
       )}
 
       {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-44 animate-pulse border border-neutral-900 bg-neutral-950"
+              className="h-40 animate-pulse rounded-2xl border border-neutral-900 bg-neutral-950"
             />
           ))}
         </div>
@@ -401,6 +420,7 @@ export function RoomDiscovery() {
                   joiningId={joiningId}
                   unreadCount={unread}
                   isTyping={isTyping}
+                  showDescription={true}
                 />
               );
             })}

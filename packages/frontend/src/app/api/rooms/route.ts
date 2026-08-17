@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { CreateRoomSchema, InitKeyVersionSchema } from "@/lib/models";
 import { ObjectId } from "mongodb";
 import crypto from "crypto";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders } from "@/lib/api-auth";
 import { getCachedSession } from "@/lib/cachedSession";
 import { incrementTagCounts } from "@/lib/tag-stats";
 import { generateRoomKey, wrapRoomKeyForPublicKey, importPublicKey } from "@/lib/crypto";
@@ -28,6 +28,7 @@ export async function POST(req: Request) {
 
     const creatorId = new ObjectId(session.user.id);
     const roomId = new ObjectId();
+    const creatorPublicKey = await importPublicKey((session.user as any)?.publicKey || "");
 
     const roomDoc = {
       _id: roomId,
@@ -50,8 +51,6 @@ export async function POST(req: Request) {
 
     // Generate and wrap room key for creator
     const creatorKey = await generateRoomKey();
-    const creatorUserDoc = await db.collection("user").findOne({ _id: creatorId });
-    const creatorPublicKey = await importPublicKey(creatorUserDoc?.publicKey || "");
     const encryptedRoomKey = await wrapRoomKeyForPublicKey(creatorKey, creatorPublicKey);
 
     // Create version 0 record
@@ -114,7 +113,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
+    return applyAuthHeaders(NextResponse.json({
       room: {
         ...roomDoc,
         id: roomId.toString(),
@@ -123,7 +122,7 @@ export async function POST(req: Request) {
         ...membershipDoc,
         id: membershipDoc._id.toString(),
       },
-    }, { status: 201 });
+    }, { status: 201 }), authResult.responseHeaders);
   } catch (err: any) {
     console.error("Room creation error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -188,7 +187,9 @@ export async function GET(req: Request) {
 
     const nextCursor = hasNextPage ? rooms[rooms.length - 1]._id.toString() : null;
 
-    const session = await getCachedSession(req.headers);
+    const sessionResult = await getCachedSession(req.headers);
+    const session = sessionResult?.session;
+    const responseHeaders = sessionResult?.responseHeaders;
     const roomIds = rooms.map((r) => r._id);
 
     let statusMap = new Map<string, string>();
@@ -236,10 +237,10 @@ export async function GET(req: Request) {
       membershipStatus: statusMap.get(room._id.toString()) ?? null,
     }));
 
-    return NextResponse.json({
+    return applyAuthHeaders(NextResponse.json({
       rooms: enrichedRooms,
       nextCursor,
-    });
+    }), responseHeaders);
   } catch (err) {
     console.error("Room listing error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

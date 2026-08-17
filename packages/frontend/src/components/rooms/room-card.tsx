@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { Users, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatUnreadBadge } from "@/lib/unread-store";
 
@@ -29,6 +29,24 @@ export interface RoomCardProps {
   lastSystemMessage?: string;
   role?: string;
   href?: string;
+  showDescription?: boolean;
+}
+
+// Animated typing dots
+function TypingDots() {
+  return (
+    <span className="inline-flex items-center gap-[3px]">
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-400"
+          style={{
+            animation: `typingBounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }}
+        />
+      ))}
+    </span>
+  );
 }
 
 export function RoomCard({
@@ -37,14 +55,14 @@ export function RoomCard({
   joiningId,
   unreadCount = 0,
   isTyping = false,
-  typingText = "typing...",
+  typingText = "typing",
   lastSystemMessage,
   role,
   href,
+  showDescription = false,
 }: RoomCardProps) {
   const roomId = room.id ?? room._id?.toString() ?? "";
   const memberCount = room.memberCount ?? 0;
-  const onlineCount = room.onlineCount ?? 0;
   const status = room.membershipStatus;
   const isJoining = joiningId === roomId;
   const destinationHref = href || `/rooms/${roomId}`;
@@ -62,49 +80,50 @@ export function RoomCard({
   }
 
   return (
-    <article className="relative flex flex-col border border-neutral-800 bg-neutral-950 p-4 transition hover:border-neutral-600 group">
-      {/* Header section with room name, typing status, policy & WhatsApp-style unread badge */}
-      <div className="mb-3 flex items-start justify-between gap-3">
+    <article className="relative flex flex-col rounded-2xl border border-neutral-800/80 bg-neutral-950 p-4 transition-all hover:border-neutral-700 hover:bg-neutral-900 group">
+      {/* Header row: name + unread badge */}
+      <div className="mb-2 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="truncate text-sm font-semibold text-white group-hover:text-neutral-200 transition-colors">
+            <h3 className="truncate text-sm font-semibold text-white group-hover:text-neutral-100 transition-colors">
               {room.name}
             </h3>
 
-            {isTyping && (
-              <span className="shrink-0 text-xs font-bold text-white animate-pulse">
-                {typingText || "typing..."}
-              </span>
-            )}
-
             {room.isDisabled && (
-              <span className="shrink-0 border border-red-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-red-400">
+              <span className="shrink-0 rounded-full bg-neutral-800 px-2 py-0.5 text-[9px] uppercase tracking-wider text-neutral-500">
                 Disabled
               </span>
             )}
           </div>
 
-          {/* Message Preview / System Message / Description */}
-          {lastSystemMessage ? (
-            <p className="mt-1 text-xs text-neutral-300 line-clamp-1 italic">
-              {lastSystemMessage}
-            </p>
-          ) : room.description ? (
-            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-500">
-              {room.description}
-            </p>
-          ) : null}
+          {/* Preview area: typing indicator OR system message OR description */}
+          <div className="mt-1.5 flex items-center gap-1.5 min-h-[18px]">
+            {isTyping ? (
+              <>
+                <TypingDots />
+                <span className="text-xs text-neutral-400">{typingText}</span>
+              </>
+            ) : lastSystemMessage ? (
+              <p className="text-xs text-neutral-500 line-clamp-1 italic">
+                {lastSystemMessage}
+              </p>
+            ) : (showDescription && room.description) ? (
+              <p className="text-xs text-neutral-600 line-clamp-1">
+                {room.description}
+              </p>
+            ) : null}
+          </div>
         </div>
 
-        {/* Right side: Unread Badge (WhatsApp style minimal white box with black number) & Policy tag */}
+        {/* Right side: unread badge + join policy */}
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           {unreadCount > 0 && (
-            <span className="bg-white text-black font-bold text-xs px-2 py-0.5 rounded min-w-[24px] h-[20px] flex items-center justify-center text-center shadow-md">
+            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-bold text-black shadow-sm">
               {formatUnreadBadge(unreadCount)}
             </span>
           )}
           {room.joinPolicy && (
-            <span className="border border-neutral-800 px-2 py-0.5 text-[10px] uppercase tracking-wider text-neutral-500">
+            <span className="rounded-full border border-neutral-800 px-2 py-0.5 text-[9px] uppercase tracking-wider text-neutral-600">
               {room.joinPolicy.replaceAll("_", " ")}
             </span>
           )}
@@ -113,11 +132,11 @@ export function RoomCard({
 
       {/* Tags */}
       {room.tags && room.tags.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-1.5">
+        <div className="mb-3 flex flex-wrap gap-1.5">
           {room.tags.map((tag) => (
             <span
               key={tag}
-              className="border border-neutral-800 bg-black px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400"
+              className="rounded-full border border-neutral-800 bg-black px-2 py-0.5 text-[10px] text-neutral-500"
             >
               {tag}
             </span>
@@ -125,26 +144,16 @@ export function RoomCard({
         </div>
       )}
 
-      {/* Footer section with online/total members display & Action Button */}
-      <div className="mt-auto flex items-center justify-between gap-3 border-t border-neutral-900 pt-3">
-        <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-          <Users size={14} className="text-neutral-500" />
-          <span className="font-mono text-neutral-300 font-medium">
-            {memberCount}
-          </span>
+      {/* Footer: member count + role + action */}
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-neutral-800/50 pt-3">
+        <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <Users size={13} className="text-neutral-600" />
+          <span className="font-medium text-neutral-400">{memberCount}</span>
         </div>
 
-        {role && (
-          <span className="text-[10px] uppercase tracking-widest text-neutral-500 font-mono">
-            {role}
-          </span>
-        )}
-
         {status === "APPROVED" || !onJoin ? (
-          <Link href={destinationHref}>
-            <Button variant="primary" size="sm" className="min-w-[72px] uppercase tracking-wider">
-              Open
-            </Button>
+          <Link href={destinationHref} className="flex items-center justify-center p-1 rounded-full hover:bg-neutral-800 transition-colors">
+            <ChevronRight size={18} className="text-neutral-400" />
           </Link>
         ) : (
           <Button
@@ -152,7 +161,7 @@ export function RoomCard({
             size="sm"
             disabled={status === "PENDING" || isJoining}
             onClick={handleAction}
-            className="min-w-[72px] uppercase tracking-wider"
+            className="min-w-[64px] rounded-full text-xs font-medium"
           >
             {isJoining ? "..." : actionLabel()}
           </Button>

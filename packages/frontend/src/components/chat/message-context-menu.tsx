@@ -52,73 +52,85 @@ export function MessageContextMenu({
     };
   }, [onClose]);
 
+  // Build items list
+  const items: { label: string; icon: React.ElementType; onClick: () => void; danger?: boolean }[] = [];
+
+  if (copyText) {
+    items.push({
+      label: "Copy",
+      icon: Copy,
+      onClick: () => {
+        navigator.clipboard.writeText(copyText).catch(() => {});
+        onClose();
+      },
+    });
+  }
+
+  items.push({
+    label: "Reply",
+    icon: Reply,
+    onClick: () => {
+      onReply();
+      onClose();
+    },
+  });
+
+  if (isOwn && canEdit) {
+    items.push({
+      label: "Edit",
+      icon: Pencil,
+      onClick: () => {
+        onEdit();
+        onClose();
+      },
+    });
+  }
+
+  if (isOwn) {
+    items.push({
+      label: "Delete",
+      icon: Trash2,
+      onClick: () => {
+        onDelete();
+        onClose();
+      },
+      danger: true,
+    });
+  }
+
   // Clamp position to viewport
-  const menuWidth = 180;
-  const itemCount = (copyText ? 1 : 0) + 1 + (isOwn && canEdit ? 1 : 0) + (isOwn ? 1 : 0);
-  const menuHeight = itemCount * 44;
+  const menuWidth = 172;
+  const itemHeight = 44;
+  const menuHeight = items.length * itemHeight;
   const clampedX = Math.min(x, window.innerWidth - menuWidth - 8);
   const clampedY = Math.min(y, window.innerHeight - menuHeight - 8);
 
   return (
-    <div
-      ref={menuRef}
-      role="menu"
-      className="fixed z-50 w-[180px] border border-neutral-700 bg-neutral-900 shadow-xl"
-      style={{ left: clampedX, top: clampedY }}
-    >
-      <button
-        role="menuitem"
-        onClick={() => {
-          if (copyText) {
-            navigator.clipboard.writeText(copyText).catch(() => {});
-          }
-          onClose();
-        }}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-neutral-300 hover:bg-neutral-800 transition-colors"
+    <>
+      {/* Dim overlay */}
+      <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]" onClick={onClose} />
+
+      {/* Menu card */}
+      <div
+        ref={menuRef}
+        role="menu"
+        className="menu-animate fixed z-50 w-[172px] overflow-hidden rounded-2xl border border-neutral-700/50 bg-neutral-900/95 shadow-2xl backdrop-blur-sm"
+        style={{ left: clampedX, top: clampedY }}
       >
-        <Copy size={14} />
-        Copy
-      </button>
-
-      <button
-        role="menuitem"
-        onClick={() => {
-          onReply();
-          onClose();
-        }}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-neutral-300 hover:bg-neutral-800 transition-colors"
-      >
-        <Reply size={14} />
-        Reply
-      </button>
-
-      {isOwn && canEdit && (
-        <button
-          role="menuitem"
-          onClick={() => {
-            onEdit();
-            onClose();
-          }}
-          className="flex w-full items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-neutral-300 hover:bg-neutral-800 transition-colors"
-        >
-          <Pencil size={14} />
-          Edit
-        </button>
-      )}
-
-      {isOwn && (
-        <button
-          role="menuitem"
-          onClick={() => {
-            onDelete();
-            onClose();
-          }}
-          className="flex w-full items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-red-400 hover:bg-neutral-800 transition-colors"
-        >
-          <Trash2 size={14} />
-          Delete
-        </button>
-      )}
-    </div>
+        {items.map((item, idx) => (
+          <button
+            key={item.label}
+            role="menuitem"
+            onClick={item.onClick}
+            className={`flex w-full items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-neutral-800 ${
+              item.danger ? "text-red-400 hover:text-red-300" : "text-neutral-200 hover:text-white"
+            } ${idx < items.length - 1 ? "border-b border-neutral-800/60" : ""}`}
+          >
+            <item.icon size={15} className={item.danger ? "text-red-400" : "text-neutral-400"} />
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </>
   );
 }

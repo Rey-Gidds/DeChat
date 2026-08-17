@@ -58,13 +58,9 @@ export function ChatInput({
   }, [draft]);
 
   // On mobile, when the textarea is focused the keyboard opens.
-  // We scroll the element into view after a short delay to ensure
-  // the visualViewport has already resized (so our keyboardOffset state
-  // is up-to-date) before we scroll.
   function handleFocus() {
     const el = textareaRef.current;
     if (!el) return;
-    // Slight delay so the keyboard has time to open
     setTimeout(() => {
       el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 150);
@@ -108,17 +104,16 @@ export function ChatInput({
 
   return (
     <div
-      className="shrink-0 border-t border-neutral-800 bg-black px-3 py-3 sm:px-4"
+      className="shrink-0 bg-[#0d0d0d] border-t border-neutral-800/50 px-3 py-3 sm:px-4"
       style={{
-        // iOS safe area (notch/home indicator)
         paddingBottom: `max(0.75rem, env(safe-area-inset-bottom, 0px))`,
       }}
     >
-      <div className="mx-auto flex max-w-3xl flex-col">
+      <div className="mx-auto flex max-w-3xl flex-col gap-1">
         {/* Reply strip */}
         {replyContext && !isEditMode && (
-          <div className="flex items-center border-b border-neutral-700 bg-neutral-900 px-3 py-1.5">
-            <div className="flex-1 min-w-0">
+          <div className="flex items-center rounded-2xl bg-neutral-900 border border-neutral-800 px-3 py-2 mb-1">
+            <div className="flex-1 min-w-0 border-l-2 border-neutral-600 pl-2">
               <span className="block text-[11px] font-medium text-neutral-300">
                 Replying to {replyContext.senderName}
               </span>
@@ -127,40 +122,51 @@ export function ChatInput({
             <button
               type="button"
               onClick={onClearReply}
-              className="ml-2 flex h-5 w-5 shrink-0 items-center justify-center text-neutral-500 transition-colors hover:text-white"
+              className="ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-800 hover:text-white"
               aria-label="Clear reply"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </div>
         )}
 
-        <div className="flex items-end gap-2 pt-2">
-          {/* Attachment button — hidden in edit mode */}
+        {/* Main input row */}
+        <div className="flex items-end gap-2">
+          {/* Plus / attachment button — hidden in edit mode */}
           {!isEditMode && (
             <div className="relative" style={{ alignSelf: "flex-end" }}>
               <button
                 type="button"
                 onClick={() => setMenuOpen((prev) => !prev)}
                 disabled={disabled || mediaSending}
-                className="flex h-11 w-11 shrink-0 items-center justify-center border border-neutral-700 bg-neutral-900 text-neutral-400 transition hover:border-neutral-500 hover:text-white disabled:opacity-40"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all disabled:opacity-40 ${
+                  menuOpen
+                    ? "bg-neutral-600 text-white"
+                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white"
+                }`}
                 aria-label="Attach media"
               >
-                <Plus size={20} />
+                <Plus
+                  size={20}
+                  className={`transition-transform duration-200 ${menuOpen ? "rotate-45" : "rotate-0"}`}
+                />
               </button>
 
+              {/* Floating menu — modern rounded card, not boxy */}
               {menuOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute bottom-full left-0 z-50 mb-2 flex flex-col border border-neutral-700 bg-neutral-900 shadow-xl">
-                    {menuItems.map((item) => (
+                  <div className="menu-animate absolute bottom-full left-0 z-50 mb-2 w-44 overflow-hidden rounded-2xl border border-neutral-700/60 bg-neutral-900/95 shadow-2xl backdrop-blur-sm">
+                    {menuItems.map((item, idx) => (
                       <button
                         key={item.label}
                         type="button"
                         onClick={item.onClick}
-                        className="flex items-center gap-3 px-4 py-2.5 text-xs uppercase tracking-wider text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-white"
+                        className={`flex w-full items-center gap-3 px-4 py-3 text-sm text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white ${
+                          idx < menuItems.length - 1 ? "border-b border-neutral-800/50" : ""
+                        }`}
                       >
-                        <item.icon size={16} />
+                        <item.icon size={16} className="text-neutral-400" />
                         {item.label}
                       </button>
                     ))}
@@ -173,8 +179,10 @@ export function ChatInput({
             </div>
           )}
 
-          {/* Auto-growing textarea wrapper */}
-          <div className="flex min-h-[44px] flex-1 items-end border border-neutral-700 bg-neutral-900 px-3 py-2 transition-colors focus-within:border-white">
+          {/* Pill-shaped input wrapper */}
+          <div className={`flex min-h-[44px] flex-1 items-end rounded-xl bg-neutral-800 px-4 py-2.5 transition-all focus-within:ring-1 focus-within:ring-neutral-600 ${
+            isEditMode ? "ring-1 ring-neutral-600" : ""
+          }`}>
             <textarea
               ref={textareaRef}
               rows={1}
@@ -183,31 +191,31 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               onFocus={handleFocus}
               disabled={disabled}
-              placeholder={isEditMode ? "Edit message" : "Message"}
+              placeholder={isEditMode ? "Edit message..." : "Message..."}
               style={{ resize: "none", overflowY: "hidden" }}
               className="min-h-[24px] w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-500"
             />
           </div>
 
-          {/* Action buttons — pinned to bottom via items-end on parent */}
+          {/* Action buttons */}
           {isEditMode ? (
-            <div className="flex gap-1" style={{ alignSelf: "flex-end" }}>
+            <div className="flex gap-1.5" style={{ alignSelf: "flex-end" }}>
               <button
                 type="button"
                 onClick={onCancelEdit}
-                className="flex h-11 w-11 shrink-0 items-center justify-center border border-neutral-700 bg-neutral-900 text-neutral-400 transition hover:border-neutral-500 hover:text-white"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-neutral-400 transition hover:bg-neutral-700 hover:text-white"
                 aria-label="Cancel edit"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
               <button
                 type="button"
                 onClick={onSaveEdit}
                 disabled={disabled || sendDisabled || !draft.trim()}
-                className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Save edit"
               >
-                <Check size={20} />
+                <Check size={18} />
               </button>
             </div>
           ) : (
@@ -216,10 +224,10 @@ export function ChatInput({
               onClick={onSend}
               disabled={disabled || sendDisabled || mediaSending || !draft.trim()}
               style={{ alignSelf: "flex-end" }}
-              className="flex h-11 w-11 shrink-0 items-center justify-center bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-30"
               aria-label="Send message"
             >
-              <ArrowUp size={20} />
+              <ArrowUp size={18} />
             </button>
           )}
         </div>

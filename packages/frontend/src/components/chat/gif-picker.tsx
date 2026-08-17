@@ -145,24 +145,24 @@ export function GifPicker({ open, onClose, onSelect }: GifPickerProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center">
-      <div className="flex h-[85dvh] w-full flex-col border border-neutral-800 bg-neutral-950 shadow-2xl sm:mx-4 sm:h-[80vh] sm:max-w-[480px]">
+      <div className="flex h-[85dvh] w-full flex-col rounded-t-2xl border border-neutral-800/80 bg-neutral-950 shadow-2xl sm:mx-4 sm:h-[80vh] sm:max-w-[480px] sm:rounded-2xl overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-3">
-          <span className="text-xs uppercase tracking-wider text-neutral-300">GIF Picker</span>
+        <div className="flex items-center justify-between border-b border-neutral-800/60 px-4 py-3">
+          <span className="text-sm font-semibold text-white">GIFs</span>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center text-neutral-500 hover:text-white transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-800 hover:text-white transition-all"
             aria-label="Close GIF picker"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
         {/* Search bar */}
-        <div className="border-b border-neutral-800 px-4 py-3">
-          <div className="flex items-center gap-2 border border-neutral-800 bg-black px-3 py-2">
-            <Search size={16} className="text-neutral-500 shrink-0" />
+        <div className="border-b border-neutral-800/60 px-3 py-3">
+          <div className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5">
+            <Search size={14} className="text-neutral-500 shrink-0" />
             <input
               ref={searchInputRef}
               type="text"
@@ -170,23 +170,23 @@ export function GifPicker({ open, onClose, onSelect }: GifPickerProps) {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search GIFs..."
               maxLength={100}
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-neutral-600"
+              className="w-full bg-transparent text-xs text-white outline-none placeholder:text-neutral-600"
             />
           </div>
         </div>
 
         {/* Categories bar */}
         {categories.length > 0 && !debouncedQuery.trim() && (
-          <div className="flex gap-2 overflow-x-auto border-b border-neutral-800 px-4 py-2 scrollbar-none">
+          <div className="flex gap-1.5 overflow-x-auto border-b border-neutral-800/60 px-3 py-2.5 scrollbar-none">
             {categories.map((cat) => (
               <button
                 key={cat.name_encoded}
                 type="button"
                 onClick={() => handleCategoryClick(cat)}
-                className={`shrink-0 border px-3 py-1 text-[10px] uppercase tracking-wider transition-colors ${
+                className={`shrink-0 rounded-full px-3 py-1 text-[10px] font-medium transition-all ${
                   activeCategory === cat.name
-                    ? "border-white bg-white text-black"
-                    : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-white"
+                    ? "bg-white text-black"
+                    : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
                 }`}
               >
                 {cat.name}
@@ -214,7 +214,7 @@ export function GifPicker({ open, onClose, onSelect }: GifPickerProps) {
                   .catch(() => setError("Could not load GIFs. Try again."))
                   .finally(() => setLoading(false));
               }}
-              className="border border-neutral-700 px-4 py-1.5 text-[10px] uppercase tracking-wider text-neutral-400 hover:border-neutral-500 hover:text-white transition-colors"
+              className="rounded-xl border border-neutral-700 px-4 py-1.5 text-[10px] font-medium text-neutral-400 hover:border-neutral-500 hover:text-white transition-all"
             >
               Retry
             </button>
@@ -275,7 +275,7 @@ export function GifPicker({ open, onClose, onSelect }: GifPickerProps) {
                   type="button"
                   onClick={handleLoadMore}
                   disabled={loading}
-                  className="border border-neutral-700 px-4 py-1.5 text-[10px] uppercase tracking-wider text-neutral-500 hover:border-neutral-500 hover:text-neutral-300 disabled:opacity-50 transition-colors"
+                  className="rounded-full border border-neutral-700 px-5 py-2 text-[10px] font-medium text-neutral-400 hover:border-neutral-500 hover:text-white disabled:opacity-50 transition-all"
                 >
                   {loading ? "Loading..." : "Load more"}
                 </button>

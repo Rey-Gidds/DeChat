@@ -10,16 +10,17 @@ import { KeyHealthProvider, useKeyHealth } from "@/components/key-recovery/provi
 import { KeyStatusBanner } from "@/components/key-recovery/key-status-banner";
 import { RecoveryDialog } from "@/components/key-recovery/recovery-dialog";
 import { KeygenDialog } from "@/components/key-recovery/keygen-dialog";
-import { Compass, Clock, List, Grid3X3, User } from "lucide-react";
+import { UnlockDialog } from "@/components/key-recovery/unlock-dialog";
+import { Compass, Clock, List, Grid3X3, User, LogOut } from "lucide-react";
 import { useUser } from "@/hooks/use-swr-hooks";
 import { GlobalSocketProvider } from "@/lib/global-socket-context";
 
+// Profile excluded from footer — lives in header only
 const NAV_ITEMS = [
   { href: "/rooms/joined", label: "Joined", icon: List },
   { href: "/pending", label: "Requests", icon: Clock },
   { href: "/", label: "Discover", icon: Compass },
   { href: "/my-rooms", label: "My Rooms", icon: Grid3X3 },
-  { href: "/profile", label: "Profile", icon: User },
 ];
 
 function GlobalRecoveryDialog() {
@@ -27,96 +28,104 @@ function GlobalRecoveryDialog() {
   return <RecoveryDialog open={isRecoveryOpen} onClose={closeRecovery} context="banner" />;
 }
 
+function GlobalUnlockDialog() {
+  return <UnlockDialog />;
+}
+
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session, isPending } = useSession();
   const { user: userProfile } = useUser();
+  const { state } = useKeyHealth();
   const isAuthPage = ["/sign-in", "/sign-up", "/verify-email", "/forgot-password", "/reset-password"].includes(pathname);
   const isRoomPage = (pathname.startsWith("/rooms/") && !pathname.startsWith("/rooms/joined") && !pathname.startsWith("/my-rooms")) || isAuthPage;
 
-  const showKeygen = session?.user && !isPending && !isAuthPage && !(session.user as any).encryptionEnabled;
+  const showKeygen = session?.user && !isPending && !isAuthPage && state === "setup-required";
   const userName = userProfile?.name || session?.user?.name || session?.user?.email;
+  const pfp = userProfile?.pfp;
 
   return (
     <div className="flex h-screen flex-col overflow-x-hidden bg-black text-neutral-200">
       <KeyStatusBanner />
       <GlobalRecoveryDialog />
-      {showKeygen && (
-        <KeygenDialog
-          userId={session.user.id}
-          onComplete={() => {
-            window.location.reload();
-          }}
-        />
-      )}
+      <GlobalUnlockDialog />
+      {showKeygen && <KeygenDialog userId={session.user.id} onComplete={() => window.location.reload()} />}
 
       {!isRoomPage && (
-        <header className="sticky top-0 z-40 border-b border-neutral-800 bg-black/95 backdrop-blur-sm">
+        <header className="sticky top-0 z-40 border-b border-neutral-800/60 bg-black/95 backdrop-blur-sm">
           <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
-            <Link href="/" className="flex items-center gap-2">
-              <Image src="/icons/dechat_logo_orig.png" alt="DeChat" width={26} height={26} />
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2 shrink-0">
+              <Image src="/icons/dechat_logo_orig.png" alt="DeChat" width={24} height={24} />
               <span className="text-sm font-semibold tracking-[0.2em] text-white uppercase">
                 DeChat
               </span>
             </Link>
 
-            <nav className="hidden sm:flex items-center gap-1">
-              <Link
-                href="/"
-                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition ${
-                  pathname === "/" ? "text-white bg-neutral-900" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                Discover
-              </Link>
-              <Link
-                href="/rooms/joined"
-                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition ${
-                  pathname === "/rooms/joined" ? "text-white bg-neutral-900" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                Joined
-              </Link>
-              <Link
-                href="/pending"
-                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition ${
-                  pathname === "/pending" ? "text-white bg-neutral-900" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                Requests
-              </Link>
-              <Link
-                href="/my-rooms"
-                className={`px-3 py-1.5 text-[10px] uppercase tracking-wider transition ${
-                  pathname === "/my-rooms" ? "text-white bg-neutral-900" : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                My Rooms
-              </Link>
+            {/* Desktop Nav Links */}
+            <nav className="hidden sm:flex items-center gap-0.5">
+              {[
+                { href: "/", label: "Discover" },
+                { href: "/rooms/joined", label: "Joined" },
+                { href: "/pending", label: "Requests" },
+                { href: "/my-rooms", label: "My Rooms" },
+              ].map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider rounded-md transition-all ${
+                      active
+                        ? "text-white bg-neutral-800"
+                        : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
             </nav>
 
+            {/* Right: Profile avatar + sign out */}
             <div className="flex items-center gap-2">
               {!isPending && session?.user ? (
                 <>
-                  <span className="hidden max-w-[140px] truncate text-xs text-neutral-500 md:inline">
-                    {userName}
-                  </span>
-                  <Link href="/profile" className="hidden sm:inline">
-                    <Button variant="ghost" size="sm" className="text-xs uppercase tracking-wider">
-                      Profile
-                    </Button>
+                  {/* Profile avatar/link — always in header */}
+                  <Link
+                    href="/profile"
+                    className={`flex items-center gap-2 rounded-full px-2 py-1.5 transition-all hover:bg-neutral-900 ${
+                      pathname === "/profile" ? "bg-neutral-900" : ""
+                    }`}
+                    title="Profile"
+                  >
+                    {pfp ? (
+                      <img
+                        src={pfp}
+                        alt={userName ?? ""}
+                        className="h-7 w-7 rounded-full object-cover ring-1 ring-neutral-700"
+                      />
+                    ) : (
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-800 ring-1 ring-neutral-700">
+                        <User size={14} className="text-neutral-300" />
+                      </div>
+                    )}
+                    <span className="hidden max-w-[120px] truncate text-xs text-neutral-400 md:inline">
+                      {userName}
+                    </span>
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="sm"
+
+                  {/* Sign out */}
+                  <button
                     onClick={async () => {
                       await clearAllOutboxEntries();
                       signOut();
                     }}
-                    className="text-xs uppercase tracking-wider"
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-900 hover:text-neutral-300"
+                    title="Sign out"
                   >
-                    Sign out
-                  </Button>
+                    <LogOut size={15} />
+                  </button>
                 </>
               ) : (
                 <Link href="/sign-in">
@@ -134,16 +143,16 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         <GlobalSocketProvider>{children}</GlobalSocketProvider>
       </main>
 
-      {/* Mobile footer nav */}
+      {/* Mobile footer nav — Profile removed, stays in header */}
       {!isRoomPage && session?.user && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-neutral-800 bg-black sm:hidden">
+        <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-neutral-800/60 bg-black/95 backdrop-blur-sm sm:hidden">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-1 flex-col items-center gap-1 py-3 text-[11px] uppercase tracking-wider transition ${
+                className={`flex flex-1 flex-col items-center gap-1 py-3 text-[10px] uppercase tracking-wider transition-all ${
                   active ? "text-white" : "text-neutral-600 hover:text-neutral-400"
                 }`}
               >

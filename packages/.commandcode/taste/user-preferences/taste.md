@@ -6,4 +6,6 @@
 - Prefers lazy resource warming: do not eagerly load per‑room data on startup; warm only when the user explicitly opens a room. Confidence: 0.8
 - Prefers plan‑first development; plans should live as `.md` files in a `docs` folder. Confidence: 0.85
 - Requires explicit user approval before implementing any plan — never start coding from a plan without the user's explicit call to proceed. Confidence: 0.9
-- Open to being asked clarifying questions during the design / planning phase. Confidence: 0.7
+- Open to being asked clarifying questions during the design / planning phase, including multiple questions when security or compatibility decisions are ambiguous. Confidence: 0.85
+- Prefers security-sensitive migrations to be seamless and backwards-compatible, preserving existing user access and data while incrementally updating persisted records after successful verification. Confidence: 0.85
+- Prefers security-related UX to use minimal, theme-consistent modals with clear strength/security indicators and explicit recovery/unlock steps. Confidence: 0.85

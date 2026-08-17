@@ -10,16 +10,14 @@
 
 # frontend
 See [frontend/taste.md](frontend/taste.md)
+# performance
+- Is interested in caching repeated authentication/session lookups to reduce database traffic, but expects explicit TTL, cleanup, and invalidation strategies to be designed alongside the cache. Confidence: 0.80
+- Cached authentication/session data must be invalidated or refreshed immediately after user-profile mutations so updated values remain consistent; it should not remain stale until the normal TTL expires. Confidence: 0.95
 # data-persistence
 - MongoDB collection operations (especially for counters like unread counts) must handle the case where no document exists yet — use upsert or check-then-create patterns rather than assuming the document pre-exists. API endpoints that read from these collections will otherwise silently return nothing. Confidence: 0.80
 
 # workflow
-- After writing a substantial new file, self-review the code for issues (duplicate logic, code smells) and rewrite/refactor immediately rather than deferring cleanup. Confidence: 0.80
-- After completing a development phase, run the type-checker (`npx tsc --noEmit`) to verify no regressions before declaring the phase complete. Confidence: 0.85
-- Before making any code changes — even small, targeted fixes — read all related files across the codebase to understand the full system context first. Don't jump to editing isolated files without tracing how they interconnect. Confidence: 0.85
-- Use structured `todo_write` phase lists during multi-step implementation sessions: enumerate all phases upfront, then mark each as pending → in_progress → completed with descriptive `activeForm` labels as work progresses. Confidence: 0.85
-- When refactoring or replacing an existing feature, the new implementation must fully reproduce all existing user-facing behaviors — regressions in previously working functionality (like typing indicators on room-discovery/joined pages) are unacceptable. The refactor should improve the internal mechanism without degrading the surface area. Confidence: 0.85
-
+See [workflow/taste.md](workflow/taste.md)
 # websocket
 - `clientMessageId` must never be broadcasted to the room; it is strictly sender-side for outbox reconciliation and optimistic UI updates. Confidence: 0.85
 - Reconnection backoff (Fibonacci or similar) must be long-tailed for backgrounded apps — capped at ~10 minutes, not tens of seconds. Short caps defeat the purpose of a background reconnection strategy. Confidence: 0.80

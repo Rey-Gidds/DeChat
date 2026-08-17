@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders, invalidateCachedSession } from "@/lib/api-auth";
 import { ensureMongoConnected } from "@/lib/mongodb";
 
 export async function POST(req: Request) {
@@ -28,7 +28,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, publicKey });
+    // Invalidate cached session so the next request sees the updated publicKey.
+    return invalidateCachedSession(
+      NextResponse.json({ ok: true, publicKey }),
+      req
+    );
   } catch (err) {
     console.error("Public key update error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

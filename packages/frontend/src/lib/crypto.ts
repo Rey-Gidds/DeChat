@@ -5,10 +5,11 @@
 export const DB_NAME = "dechat-crypto-store";
 const STORE_NAME = "private-keys";
 const ROOM_KEY_STORE = "room-keys";
-export const DB_VERSION = 7;
+export const DB_VERSION = 8;
 const ROOM_KEY_VERSIONS_STORE = "room-key-versions";
 const OUTBOX_STORE = "message-outbox";
 const UNREAD_COUNTS_STORE = "unread-counts";
+const KEY_PAIRS_STORE = "key-pairs";
 
 // Initialize IndexedDB for secure local private key storage
 function getDB(): Promise<IDBDatabase> {
@@ -51,6 +52,9 @@ function getDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(UNREAD_COUNTS_STORE)) {
         db.createObjectStore(UNREAD_COUNTS_STORE, { keyPath: "roomId" });
       }
+      if (!db.objectStoreNames.contains(KEY_PAIRS_STORE)) {
+        db.createObjectStore(KEY_PAIRS_STORE);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -58,7 +62,8 @@ function getDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Generates an RSA-OAEP 2048-bit keypair for E2EE key exchange
+ * Generates an RSA-OAEP 2048-bit keypair for E2EE key exchange.
+ * Requires keyUsages to include both public (encrypt, wrapKey) and private (decrypt, unwrapKey) usages.
  */
 export async function generateUserKeyPair(): Promise<CryptoKeyPair> {
   return crypto.subtle.generateKey(
@@ -69,7 +74,7 @@ export async function generateUserKeyPair(): Promise<CryptoKeyPair> {
       hash: "SHA-256",
     },
     true, // must be extractable for backup recovery kit downloads
-    ["decrypt", "unwrapKey"]
+    ["encrypt", "decrypt", "wrapKey", "unwrapKey"]
   );
 }
 
@@ -137,6 +142,212 @@ export async function getPrivateKey(userId: string): Promise<CryptoKey | null> {
   });
 }
 
+export interface UserKeyPair {
+  publicKey: CryptoKey;
+  privateKey: CryptoKey;
+}
+
+export interface CryptoEnvelope {
+  version: 1;
+  algorithm: "AES-256-GCM";
+  kdf: "PBKDF2-SHA-256";
+  iterations: number;
+  salt: string;
+  iv: string;
+  ciphertext: string;
+}
+
+export interface RecoveryKeyEnvelope extends CryptoEnvelope {
+  purpose: "dechat-passphrase-recovery";
+}
+
+const ENVELOPE_VERSION = 1 as const;
+const PBKDF2_ITERATIONS = 310_000;
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function encodeBytes(bytes: Uint8Array): string {
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function decodeBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function derivePassphraseKey(
+  passphrase: string,
+  salt: Uint8Array,
+  iterations: number,
+  usage: KeyUsage
+): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: salt, iterations: iterations, hash: "SHA-256" },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    [usage]
+  );
+}
+
+async function encryptTextWithPassphrase(
+  plaintext: string,
+  passphrase: string,
+  purpose?: RecoveryKeyEnvelope["purpose"]
+): Promise<CryptoEnvelope | RecoveryKeyEnvelope> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await derivePassphraseKey(passphrase, salt, PBKDF2_ITERATIONS, "encrypt");
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoder.encode(plaintext));
+  const envelope: CryptoEnvelope = {
+    version: 1,
+    algorithm: "AES-256-GCM",
+    kdf: "PBKDF2-SHA-256",
+    iterations: PBKDF2_ITERATIONS,
+    salt: encodeBytes(salt),
+    iv: encodeBytes(iv),
+    ciphertext: encodeBytes(new Uint8Array(ciphertext)),
+  };
+  if (purpose) {
+    const recoveryEnv: RecoveryKeyEnvelope = { ...envelope, purpose };
+    return recoveryEnv;
+  }
+  return envelope;
+}
+
+async function decryptTextWithPassphrase(
+  envelope: CryptoEnvelope,
+  passphrase: string
+): Promise<string> {
+  if (envelope.version !== ENVELOPE_VERSION || envelope.algorithm !== "AES-256-GCM" || envelope.kdf !== "PBKDF2-SHA-256") {
+    throw new Error("Unsupported encryption envelope");
+  }
+  const salt = decodeBytes(envelope.salt);
+  const iv = decodeBytes(envelope.iv);
+  if (salt.length !== 16 || iv.length !== 12 || envelope.iterations < 100_000) {
+    throw new Error("Invalid encryption envelope");
+  }
+  const key = await derivePassphraseKey(passphrase, salt, envelope.iterations, "decrypt");
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: iv },
+    key,
+    decodeBytes(envelope.ciphertext)
+  );
+  return decoder.decode(plaintext);
+}
+
+async function exportKeyPairBundle(keyPair: CryptoKeyPair): Promise<string> {
+  const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+  (publicKey as any).key_ops = ["encrypt", "wrapKey"];
+  (privateKey as any).key_ops = ["decrypt", "unwrapKey"];
+  return JSON.stringify({ publicKey, privateKey });
+}
+
+async function importKeyPairBundle(value: string): Promise<UserKeyPair> {
+  const bundle = JSON.parse(value) as { publicKey: JsonWebKey; privateKey: JsonWebKey };
+  const publicKey = { ...bundle.publicKey, key_ops: ["encrypt", "wrapKey"] };
+  const privateKey = { ...bundle.privateKey, key_ops: ["decrypt", "unwrapKey"] };
+  return {
+    publicKey: await crypto.subtle.importKey("jwk", publicKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["encrypt", "wrapKey"]),
+    privateKey: await crypto.subtle.importKey("jwk", privateKey, { name: "RSA-OAEP", hash: "SHA-256" }, true, ["decrypt", "unwrapKey"]),
+  };
+}
+
+export async function encryptUserKeyPair(
+  keyPair: CryptoKeyPair,
+  passphrase: string
+): Promise<CryptoEnvelope> {
+  const res = await encryptTextWithPassphrase(await exportKeyPairBundle(keyPair), passphrase);
+  return res as CryptoEnvelope;
+}
+
+export async function decryptUserKeyPair(
+  envelope: CryptoEnvelope,
+  passphrase: string
+): Promise<UserKeyPair> {
+  return importKeyPairBundle(await decryptTextWithPassphrase(envelope, passphrase));
+}
+
+export async function generateRecoveryKey(): Promise<CryptoKey> {
+  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+}
+
+export async function exportRecoveryKey(recoveryKey: CryptoKey): Promise<string> {
+  return encodeBytes(new Uint8Array(await crypto.subtle.exportKey("raw", recoveryKey)));
+}
+
+export async function importRecoveryKey(encoded: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", decodeBytes(encoded), { name: "AES-GCM" }, true, ["encrypt", "decrypt"]);
+}
+
+export async function encryptPassphraseRecoveryEnvelope(
+  passphrase: string,
+  recoveryKey: CryptoKey
+): Promise<RecoveryKeyEnvelope> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, recoveryKey, encoder.encode(passphrase));
+  const env: RecoveryKeyEnvelope = {
+    version: 1,
+    algorithm: "AES-256-GCM",
+    kdf: "PBKDF2-SHA-256",
+    iterations: 0,
+    salt: "",
+    iv: encodeBytes(iv),
+    ciphertext: encodeBytes(new Uint8Array(ciphertext)),
+    purpose: "dechat-passphrase-recovery",
+  };
+  return env;
+}
+
+export async function decryptPassphraseRecoveryEnvelope(
+  envelope: RecoveryKeyEnvelope,
+  recoveryKey: CryptoKey
+): Promise<string> {
+  if (envelope.version !== ENVELOPE_VERSION || envelope.purpose !== "dechat-passphrase-recovery") {
+    throw new Error("Unsupported recovery envelope");
+  }
+  return decoder.decode(await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: decodeBytes(envelope.iv) },
+    recoveryKey,
+    decodeBytes(envelope.ciphertext)
+  ));
+}
+
+export async function saveUserKeyPair(userId: string, keyPair: UserKeyPair): Promise<void> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(KEY_PAIRS_STORE, "readwrite").objectStore(KEY_PAIRS_STORE).put(keyPair, userId);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getUserKeyPair(userId: string): Promise<UserKeyPair | null> {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(KEY_PAIRS_STORE, "readonly").objectStore(KEY_PAIRS_STORE).get(userId);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 /**
  * Generates and downloads an encrypted Backup / Recovery Kit of the private key.
  * Encrypted using AES-256-GCM derived from a user-supplied password.
@@ -190,9 +401,9 @@ export async function downloadRecoveryKit(
 
   const recoveryData = {
     userId,
-    salt: btoa(String.fromCharCode(...salt)),
-    iv: btoa(String.fromCharCode(...iv)),
-    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+    salt: encodeBytes(salt),
+    iv: encodeBytes(iv),
+    ciphertext: encodeBytes(new Uint8Array(ciphertext)),
   };
 
   // Trigger file download
@@ -229,7 +440,7 @@ export async function wrapRoomKeyForPublicKey(
     recipientPublicKey,
     { name: "RSA-OAEP" }
   );
-  return btoa(String.fromCharCode(...new Uint8Array(wrapped)));
+  return encodeBytes(new Uint8Array(wrapped));
 }
 
 /**
@@ -239,9 +450,7 @@ export async function unwrapRoomKey(
   encryptedRoomKeyBase64: string,
   privateKey: CryptoKey
 ): Promise<CryptoKey> {
-  const wrapped = Uint8Array.from(atob(encryptedRoomKeyBase64), (c) =>
-    c.charCodeAt(0)
-  );
+  const wrapped = decodeBytes(encryptedRoomKeyBase64);
   return crypto.subtle.unwrapKey(
     "raw",
     wrapped,
@@ -371,15 +580,9 @@ export async function recoverPrivateKeyFromKit(
   passphrase: string
 ): Promise<CryptoKey> {
   const enc = new TextEncoder();
-  const salt = new Uint8Array(
-    atob(recoveryFile.salt).split("").map((c) => c.charCodeAt(0))
-  );
-  const iv = new Uint8Array(
-    atob(recoveryFile.iv).split("").map((c) => c.charCodeAt(0))
-  );
-  const ciphertext = new Uint8Array(
-    atob(recoveryFile.ciphertext).split("").map((c) => c.charCodeAt(0))
-  );
+  const salt = decodeBytes(recoveryFile.salt);
+  const iv = decodeBytes(recoveryFile.iv);
+  const ciphertext = decodeBytes(recoveryFile.ciphertext);
 
   const baseKey = await crypto.subtle.importKey(
     "raw",
@@ -459,9 +662,9 @@ export async function encryptMessage(
   const authTag = combined.slice(combined.length - tagLength);
 
   return {
-    ciphertext: btoa(String.fromCharCode(...ciphertext)),
-    iv: btoa(String.fromCharCode(...iv)),
-    authTag: btoa(String.fromCharCode(...authTag)),
+    ciphertext: encodeBytes(ciphertext),
+    iv: encodeBytes(iv),
+    authTag: encodeBytes(authTag),
   };
 }
 
@@ -472,13 +675,9 @@ export async function decryptMessage(
   payload: EncryptedMessagePayload,
   roomKey: CryptoKey
 ): Promise<string> {
-  const ciphertext = Uint8Array.from(atob(payload.ciphertext), (c) =>
-    c.charCodeAt(0)
-  );
-  const iv = Uint8Array.from(atob(payload.iv), (c) => c.charCodeAt(0));
-  const authTag = Uint8Array.from(atob(payload.authTag), (c) =>
-    c.charCodeAt(0)
-  );
+  const ciphertext = decodeBytes(payload.ciphertext);
+  const iv = decodeBytes(payload.iv);
+  const authTag = decodeBytes(payload.authTag);
 
   const combined = new Uint8Array(ciphertext.length + authTag.length);
   combined.set(ciphertext);

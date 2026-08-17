@@ -218,15 +218,15 @@ export function RoomOptionsPage({
 
   return (
     <div className="flex flex-1 flex-col min-h-0 overflow-hidden relative">
-      {/* Tab bar */}
-      <div className="flex shrink-0 border-b border-neutral-800">
+      {/* Tab bar — pill style */}
+      <div className="flex shrink-0 gap-1 px-3 py-2.5 border-b border-neutral-800/60">
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => switchTab(t.id)}
-            className={`flex-1 py-2.5 text-[10px] uppercase tracking-wider transition ${
-              tab === t.id ? "bg-white text-black" : "text-neutral-500 hover:text-white"
+            className={`flex-1 py-2 text-[10px] uppercase tracking-wider rounded-full transition ${
+              tab === t.id ? "bg-white text-black font-semibold" : "text-neutral-500 hover:text-white hover:bg-neutral-800"
             }`}
           >
             {t.label}
@@ -246,29 +246,28 @@ export function RoomOptionsPage({
           </div>
 
           {/* Copy invite link */}
-          <div className="border-b border-neutral-900 p-4">
-            <p className="text-[10px] uppercase tracking-wider text-neutral-500">Invite Link</p>
-            <div className="mt-2 flex gap-2">
-              <code className="flex-1 truncate border border-neutral-800 bg-black px-2 py-2 text-[11px] text-neutral-400">
+          <div className="border-b border-neutral-800/40 p-4">
+            <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-2">Invite Link</p>
+            <div className="mt-1 flex gap-2">
+              <code className="flex-1 truncate rounded-xl bg-neutral-900 border border-neutral-800 px-3 py-2 text-[11px] text-neutral-400">
                 {inviteUrl}
               </code>
               <button
                 type="button"
                 onClick={() => void copy()}
-                className="flex h-9 w-9 shrink-0 items-center justify-center border border-neutral-700 text-neutral-400 transition hover:border-neutral-500 hover:text-white"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-800 text-neutral-400 transition hover:bg-neutral-700 hover:text-white"
                 aria-label="Copy invite link"
               >
-                {copied ? <Check size={14} className="text-green-400" /> : <Link2 size={14} />}
+                {copied ? <Check size={14} className="text-white" /> : <Link2 size={14} />}
               </button>
             </div>
-            {copied && <p className="mt-1 text-[10px] text-neutral-500">Link copied!</p>}
+            {copied && <p className="mt-1.5 text-[10px] text-neutral-500">Link copied!</p>}
           </div>
 
           {/* Spacer to push stacked action buttons to bottom */}
           <div className="flex-1 min-h-[20px]" />
 
-          {/* Stacked bottom buttons: Edit Details, Disable / Restore Room, Leave Room */}
-          <div className="p-4 flex flex-col gap-2.5 border-t border-neutral-900">
+          <div className="p-4 flex flex-col gap-2.5">
             {isAdmin && onEditDetails && (
               <button
                 type="button"
@@ -277,7 +276,7 @@ export function RoomOptionsPage({
                   setEditDescription(roomDescription || "");
                   setIsEditOpen(true);
                 }}
-                className="w-full border border-neutral-700 bg-neutral-900 py-2.5 text-xs font-medium uppercase tracking-wider text-white transition hover:border-neutral-500 hover:bg-neutral-800"
+                className="w-full rounded-xl bg-neutral-800 py-2.5 text-xs font-medium text-white transition hover:bg-neutral-700"
               >
                 Edit Details
               </button>
@@ -287,10 +286,10 @@ export function RoomOptionsPage({
               <button
                 type="button"
                 onClick={onToggleDisable}
-                className={`w-full border py-2.5 text-xs uppercase tracking-wider transition ${
+                className={`w-full rounded-xl py-2.5 text-xs font-medium transition ${
                   isDisabled
-                    ? "border-green-500/30 text-green-400 hover:border-green-500/60 hover:bg-green-950/20"
-                    : "border-red-500/30 text-red-400 hover:border-red-500/60 hover:bg-red-950/20"
+                    ? "bg-neutral-800 text-neutral-300 hover:bg-neutral-700"
+                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
                 }`}
               >
                 {isDisabled ? "Restore Room" : "Disable Room"}
@@ -301,7 +300,7 @@ export function RoomOptionsPage({
               <button
                 type="button"
                 onClick={onLeaveRequest}
-                className="w-full border border-red-500/40 bg-red-950/30 py-2.5 text-xs font-medium uppercase tracking-wider text-red-400 transition hover:bg-red-950/60"
+                className="w-full rounded-xl border border-red-500/30 bg-red-950/10 py-2.5 text-xs font-medium text-red-400 transition hover:bg-red-950/30"
               >
                 Leave Room
               </button>
@@ -312,37 +311,37 @@ export function RoomOptionsPage({
 
       {/* Edit Details Modal */}
       {isEditOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-md border border-neutral-800 bg-neutral-950 p-6 shadow-2xl">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-white">Edit Room Details</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl border border-neutral-700/50 bg-neutral-900 p-6 shadow-2xl">
+            <h3 className="text-sm font-semibold text-white">Edit Room Details</h3>
             <div className="mt-4 space-y-4">
               <div>
-                <label className="block text-[10px] uppercase tracking-wider text-neutral-400">Room Name</label>
+                <label className="block text-[10px] uppercase tracking-wider text-neutral-400 mb-1">Room Name</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="mt-1 w-full border border-neutral-800 bg-black px-3 py-2 text-xs text-white focus:border-neutral-500 focus:outline-none"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2.5 text-sm text-white focus:border-neutral-500 focus:outline-none"
                   placeholder="Enter room name"
                 />
               </div>
               <div>
-                <label className="block text-[10px] uppercase tracking-wider text-neutral-400">Description</label>
+                <label className="block text-[10px] uppercase tracking-wider text-neutral-400 mb-1">Description</label>
                 <textarea
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={3}
-                  className="mt-1 w-full border border-neutral-800 bg-black px-3 py-2 text-xs text-white focus:border-neutral-500 focus:outline-none resize-none"
+                  className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-2.5 text-sm text-white focus:border-neutral-500 focus:outline-none resize-none"
                   placeholder="Enter room description"
                 />
               </div>
             </div>
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-5 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setIsEditOpen(false)}
                 disabled={savingDetails}
-                className="px-4 py-2 text-xs uppercase tracking-wider text-neutral-400 hover:text-white"
+                className="px-4 py-2 rounded-xl text-xs text-neutral-400 hover:text-white hover:bg-neutral-800 transition"
               >
                 Cancel
               </button>
@@ -361,7 +360,7 @@ export function RoomOptionsPage({
                     setSavingDetails(false);
                   }
                 }}
-                className="border border-white bg-white px-4 py-2 text-xs uppercase tracking-wider text-black font-semibold hover:bg-neutral-200 disabled:opacity-50"
+                className="rounded-xl bg-white px-4 py-2 text-xs font-semibold text-black hover:bg-neutral-200 disabled:opacity-50 transition"
               >
                 {savingDetails ? "Saving..." : "Save Changes"}
               </button>
@@ -374,7 +373,7 @@ export function RoomOptionsPage({
       {tab === "members" && (
         <div className="flex flex-1 flex-col min-h-0">
           <DebounceSearch placeholder="Search members..." onSearch={handleMemberSearch} />
-          <ul className="flex-1 overflow-y-auto">
+          <ul className="flex-1 overflow-y-auto px-2 py-1 space-y-0.5">
             {filtered.length === 0 && (
               <li className="px-4 py-8 text-center text-xs text-neutral-600">No members found.</li>
             )}
@@ -387,8 +386,8 @@ export function RoomOptionsPage({
                     type="button"
                     disabled={!isClickable}
                     onClick={() => openMemberAction(m)}
-                    className={`flex w-full items-center gap-3 border border-transparent px-4 py-2.5 text-left transition ${
-                      isClickable ? "hover:border-neutral-800 hover:bg-neutral-950" : "cursor-default"
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                      isClickable ? "hover:bg-neutral-900" : "cursor-default"
                     }`}
                   >
                     <span
@@ -433,14 +432,14 @@ export function RoomOptionsPage({
                   type="button"
                   disabled={rejectAllLoading}
                   onClick={() => void handleRejectAll()}
-                  className="w-full border border-red-500/30 py-2 text-[10px] uppercase tracking-wider text-red-400 transition hover:bg-red-950/20 disabled:opacity-50"
+                  className="w-full rounded-xl border border-red-500/30 py-2.5 text-[10px] uppercase tracking-wider text-red-400 transition hover:bg-red-950/20 disabled:opacity-50"
                 >
                   {rejectAllLoading ? "Rejecting..." : `Reject All (${requests.length})`}
                 </button>
               </div>
               <ul className="space-y-2 px-3 pb-4">
                 {requests.map((req) => (
-                  <li key={req.userId} className="border border-neutral-900 bg-black p-3">
+                  <li key={req.userId} className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
                     <div className="flex items-center gap-3">
                       <Avatar pfp={req.user?.pfp} size={28} />
                       <div className="min-w-0 flex-1">
@@ -452,12 +451,12 @@ export function RoomOptionsPage({
                         </p>
                       </div>
                     </div>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-2.5 flex gap-2">
                       <button
                         type="button"
                         disabled={!!processingId || !req.user?.publicKey}
                         onClick={() => void handleApprove(req)}
-                        className="flex-1 border border-white/20 py-1.5 text-[10px] uppercase tracking-wider text-white transition hover:bg-white/10 disabled:opacity-40"
+                        className="flex-1 rounded-xl bg-white py-2 text-[10px] font-semibold text-black transition hover:bg-neutral-200 disabled:opacity-40"
                       >
                         {processingId === req.userId ? "..." : "Approve"}
                       </button>
@@ -465,7 +464,7 @@ export function RoomOptionsPage({
                         type="button"
                         disabled={!!processingId}
                         onClick={() => void handleReject(req.userId)}
-                        className="flex-1 border border-neutral-800 py-1.5 text-[10px] uppercase tracking-wider text-neutral-400 transition hover:border-neutral-600 disabled:opacity-40"
+                        className="flex-1 rounded-xl border border-neutral-700 py-2 text-[10px] text-neutral-400 transition hover:bg-neutral-800 disabled:opacity-40"
                       >
                         Reject
                       </button>

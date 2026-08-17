@@ -1,235 +1,174 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, FileJson, Lock, ShieldAlert, Upload, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Copy, KeyRound, Lock, ShieldAlert, X } from "lucide-react";
 import { useKeyHealth } from "./provider";
-import { recoverPrivateKeyFromKit } from "@/lib/crypto";
 
 type Context = "room" | "sign-in" | "banner" | "profile";
+interface Props { open: boolean; onClose: () => void; context?: Context; }
 
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  context?: Context;
-}
-
-const CONTEXT_MESSAGES: Record<Context, { header: string; body: string }> = {
-  "sign-in": {
-    header: "Welcome Back",
-    body: "Your local encryption key was not found. Restore your identity to access your rooms.",
-  },
-  room: {
-    header: "Room Access Required",
-    body: "You need your private key to decrypt messages in this room.",
-  },
-  banner: {
-    header: "Keys Missing",
-    body: "Your identity keys are missing. Restore now to send and decrypt messages.",
-  },
-  profile: {
-    header: "Identity Restore",
-    body: "Restore your private key from a recovery kit backup.",
-  },
-};
-
-export function RecoveryDialog({ open, onClose, context = "banner" }: Props) {
-  const { refreshKeyStatus } = useKeyHealth();
-  const [recoveryFile, setRecoveryFile] = useState<any>(null);
+export function RecoveryDialog({ open, onClose }: Props) {
+  const { recoverPassphrase, unlockEncryption } = useKeyHealth();
+  const [recoveryKey, setRecoveryKey] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [enteredPassphrase, setEnteredPassphrase] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
-  const [state, setState] = useState<"idle" | "file_selected" | "restoring" | "success">("idle");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setRecoveryFile(null);
+      setRecoveryKey("");
       setPassphrase("");
+      setEnteredPassphrase("");
+      setRevealed(false);
+      setCopied(false);
       setError("");
-      setState("idle");
     }
   }, [open]);
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (!json.userId || !json.salt || !json.iv || !json.ciphertext) {
-          setError("Invalid recovery kit file structure.");
-          return;
-        }
-        setRecoveryFile(json);
-        setError("");
-        setState("file_selected");
-      } catch {
-        setError("Invalid recovery kit file structure.");
-      }
-    };
-    reader.readAsText(file);
-  }, []);
-
-  const handleRestore = useCallback(async () => {
-    if (!recoveryFile || !passphrase) {
-      setError("Please load a valid recovery file and enter the passphrase.");
-      return;
-    }
-    setError("");
-    setState("restoring");
-
-    try {
-      await recoverPrivateKeyFromKit(recoveryFile, passphrase);
-      setState("success");
-      await refreshKeyStatus();
-      setTimeout(() => onClose(), 1500);
-    } catch (err: any) {
-      setError("Decryption failed. Please verify the passphrase.");
-      setState("file_selected");
-    }
-  }, [recoveryFile, passphrase, refreshKeyStatus, onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
   if (!open) return null;
 
-  const msg = CONTEXT_MESSAGES[context];
+  async function recover() {
+    if (!recoveryKey.trim()) return setError("Enter your saved recovery key.");
+    setLoading(true);
+    setError("");
+    try {
+      setPassphrase(await recoverPassphrase(recoveryKey));
+      setRevealed(true);
+    } catch {
+      setError("That recovery key could not recover your passphrase.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function unlock() {
+    setLoading(true);
+    setError("");
+    if (enteredPassphrase !== passphrase) {
+      setLoading(false);
+      return setError("Enter the recovered passphrase exactly as shown.");
+    }
+    try {
+      await unlockEncryption(passphrase);
+      onClose();
+    } catch {
+      setError("The recovered passphrase could not unlock your keys.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(passphrase).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="recovery-header"
     >
-      {/* overlay */}
-      <div
-        className="absolute inset-0 bg-black/80"
-        onClick={onClose}
-      />
-
-      {/* container */}
-      <div className="relative max-w-md w-full border border-neutral-800 bg-neutral-900 p-6 sm:p-8 flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
-        {/* close */}
+      <div className="relative w-full max-w-sm rounded-2xl border border-neutral-700/50 bg-neutral-900 p-6 shadow-2xl">
+        {/* Close */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-neutral-500 hover:text-white transition"
+          className="absolute right-4 top-4 flex h-7 w-7 items-center justify-center rounded-full text-neutral-600 transition hover:bg-neutral-800 hover:text-white"
           aria-label="Close"
         >
-          <X size={18} />
+          <X className="h-4 w-4" />
         </button>
 
-        {/* header */}
-        <div className="text-center">
-          <h2 id="recovery-header" className="text-xl font-bold text-white uppercase tracking-[0.15em]">
-            {msg.header}
-          </h2>
-          <p className="text-neutral-500 text-xs mt-2 uppercase tracking-wider">{msg.body}</p>
+        {/* Header */}
+        <div className="mb-6 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-800">
+            <KeyRound className="h-6 w-6 text-neutral-300" />
+          </div>
+          <h2 className="text-base font-semibold text-white">Recover passphrase</h2>
+          <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+            Use the recovery key you saved during encryption setup.
+          </p>
         </div>
 
-        {/* error */}
+        {/* Error */}
         {error && (
-          <div
-            className="p-3.5 bg-red-500/10 border border-red-500/20 text-red-400 text-sm flex items-center gap-2"
-            role="alert"
-          >
-            <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+            <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* success */}
-        {state === "success" ? (
-          <div className="text-center py-6 flex flex-col items-center gap-4">
-            <CheckCircle2 className="w-12 h-12 text-neutral-400" />
-            <h3 className="text-lg font-bold text-white uppercase tracking-[0.1em]">Identity Restored!</h3>
-            <p className="text-neutral-500 text-xs uppercase tracking-wider">Redirecting...</p>
-          </div>
+        {!revealed ? (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Recovery key</label>
+              <textarea
+                autoFocus
+                value={recoveryKey}
+                onChange={(e) => setRecoveryKey(e.target.value)}
+                className="min-h-24 w-full resize-none rounded-xl border border-neutral-700 bg-neutral-800 p-3 text-xs text-white outline-none placeholder:text-neutral-600 focus:border-neutral-500 transition-colors"
+                placeholder="Paste your recovery key here..."
+              />
+            </div>
+            <button
+              onClick={() => void recover()}
+              disabled={loading}
+              className="mt-4 w-full rounded-xl bg-white py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:opacity-40"
+            >
+              {loading ? "Recovering..." : "Recover passphrase"}
+            </button>
+          </>
         ) : (
-          <div className="flex flex-col gap-4">
-            {/* file upload */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-neutral-400 text-xs font-semibold uppercase tracking-wider">
-                Recovery JSON File
-              </label>
-              <label className="flex flex-col items-center justify-center border border-neutral-800 hover:border-neutral-600 p-6 cursor-pointer bg-black transition-colors gap-2 text-neutral-500">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                {recoveryFile ? (
-                  <>
-                    <FileJson className="w-8 h-8 text-neutral-400" />
-                    <span className="text-xs text-neutral-400 font-medium">Loaded backup file</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-8 h-8 text-neutral-600" />
-                    <span className="text-xs uppercase tracking-wider">Upload dechat-recovery-kit-*.json</span>
-                  </>
-                )}
-              </label>
-            </div>
-
-            {/* passphrase */}
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="recovery-passphrase"
-                className="text-neutral-400 text-xs font-semibold uppercase tracking-wider"
-              >
-                Encryption Passphrase
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-600" />
-                <input
-                  id="recovery-passphrase"
-                  type="password"
-                  autoComplete="off"
-                  value={passphrase}
-                  onChange={(e) => setPassphrase(e.target.value)}
-                  placeholder="Passphrase used during backup"
-                  className="w-full bg-black border border-neutral-800 py-3 pl-11 pr-4 text-white text-sm outline-none focus:border-neutral-600 transition-colors"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && state === "file_selected") handleRestore();
-                  }}
-                />
+          <>
+            {/* Revealed passphrase box */}
+            <div className="rounded-xl border border-neutral-700 bg-neutral-800 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] uppercase tracking-wider text-neutral-500">Your passphrase</p>
+                <button
+                  onClick={() => void handleCopy()}
+                  className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-neutral-400 hover:text-white transition"
+                >
+                  <Copy className="h-3 w-3" />
+                  {copied ? "Copied!" : "Copy"}
+                </button>
               </div>
+              <code className="break-all text-sm text-white">{passphrase}</code>
+              {revealed && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-neutral-400">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-neutral-400" />
+                  Recovery verified
+                </div>
+              )}
             </div>
 
-            {/* actions */}
-            <div className="flex gap-3 mt-4">
-              <button
-                onClick={onClose}
-                className="flex-1 bg-neutral-800 border border-neutral-700 text-neutral-400 py-3 hover:bg-neutral-700 transition-colors text-xs font-semibold uppercase tracking-wider"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRestore}
-                disabled={state !== "file_selected" || !passphrase}
-                className="flex-1 bg-white text-black py-3 hover:bg-neutral-200 transition-colors text-xs font-bold uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {state === "restoring" ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="inline-block w-4 h-4 border-2 border-black border-t-transparent animate-spin" />
-                    Restoring...
-                  </span>
-                ) : (
-                  "Restore"
-                )}
-              </button>
+            <p className="mt-4 text-xs text-neutral-500">Enter it below to unlock your identity keys.</p>
+
+            <div className="mt-3 flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-neutral-500">Passphrase</label>
+              <input
+                autoFocus
+                type="password"
+                value={enteredPassphrase}
+                onChange={(e) => setEnteredPassphrase(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void unlock()}
+                placeholder="Re-enter passphrase to unlock"
+                className="w-full rounded-xl border border-neutral-700 bg-neutral-800 px-3 py-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-neutral-500 transition-colors"
+              />
             </div>
-          </div>
+
+            <button
+              onClick={() => void unlock()}
+              disabled={loading}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:opacity-40"
+            >
+              <Lock className="h-4 w-4" />
+              {loading ? "Unlocking..." : "Unlock identity"}
+            </button>
+          </>
         )}
       </div>
     </div>

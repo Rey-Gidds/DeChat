@@ -11,7 +11,7 @@ export default function PendingRequestsPage() {
   if (isPending) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-xs uppercase tracking-wider text-neutral-600">Loading...</p>
+        <p className="text-xs uppercase tracking-wider text-neutral-600 animate-pulse">Loading...</p>
       </div>
     );
   }
@@ -30,37 +30,39 @@ export default function PendingRequestsPage() {
   const error = swrError instanceof Error ? swrError.message : "";
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
-        <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Pending Requests</h1>
-        <p className="mt-2 text-sm text-neutral-500">
-          Track your room access requests.
-        </p>
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+      {/* Page header */}
+      <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
+        <h1 className="text-xl font-semibold text-white sm:text-2xl">Requests</h1>
+        <p className="mt-1 text-sm text-neutral-500">Track your room access requests.</p>
       </div>
 
       {error && (
-        <div className="mb-4 border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">
+        <div className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">
           {error}
         </div>
       )}
 
       {isLoading ? (
-        <div className="border border-neutral-900 bg-neutral-950 p-6">
-          <p className="text-xs uppercase tracking-wider text-neutral-600">Loading…</p>
+        <div className="rounded-xl border border-neutral-900 bg-neutral-950 p-6">
+          <p className="text-xs uppercase tracking-wider text-neutral-600 animate-pulse">Loading…</p>
         </div>
       ) : rows.length === 0 ? (
-        <div className="border border-dashed border-neutral-800 px-6 py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-neutral-800 px-6 py-16 text-center">
           <p className="text-sm text-neutral-500">No requests found.</p>
           <Link href="/" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">
             Back to Discover
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((r) => (
+        <div className="space-y-4.5">
+          {rows.map((r) =>
             r.status === "APPROVED" ? (
               <Link key={r.roomId} href={`/rooms/${r.roomId}`}>
-                <div key={`${r.roomId}:${r.requestedAt}`} className="border border-neutral-900 bg-black p-4">
+                <div
+                  key={`${r.roomId}:${r.requestedAt}`}
+                  className="rounded-xl border border-neutral-900 bg-black p-4 hover:border-neutral-700 hover:bg-neutral-950 transition-all"
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-white">
@@ -70,27 +72,30 @@ export default function PendingRequestsPage() {
                         Requested {new Date(r.requestedAt).toLocaleString()}
                       </p>
                       {r.reviewedAt && (
-                        <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                        <p className="mt-0.5 text-[10px] uppercase tracking-wider text-neutral-600">
                           Reviewed {new Date(r.reviewedAt).toLocaleString()}
                         </p>
                       )}
                     </div>
                     <span
-                      className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                      className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
                         r.status === "APPROVED"
-                          ? "border-green-500/30 text-green-400"
+                          ? "bg-neutral-800 text-neutral-300"
                           : r.status === "REJECTED"
-                            ? "border-red-500/30 text-red-400"
-                            : "border-neutral-800 text-neutral-400"
+                            ? "bg-red-950/30 text-red-400"
+                            : "bg-neutral-800 text-neutral-500"
                       }`}
                     >
                       {r.status}
                     </span>
                   </div>
                 </div>
-            </Link>
+              </Link>
             ) : (
-              <div key={`${r.roomId}:${r.requestedAt}`} className="border border-neutral-900 bg-black p-4">
+              <div
+                key={`${r.roomId}:${r.requestedAt}`}
+                className="rounded-xl border border-neutral-900 bg-black p-4"
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-white">
@@ -100,18 +105,18 @@ export default function PendingRequestsPage() {
                       Requested {new Date(r.requestedAt).toLocaleString()}
                     </p>
                     {r.reviewedAt && (
-                      <p className="mt-1 text-[10px] uppercase tracking-wider text-neutral-600">
+                      <p className="mt-0.5 text-[10px] uppercase tracking-wider text-neutral-600">
                         Reviewed {new Date(r.reviewedAt).toLocaleString()}
                       </p>
                     )}
                   </div>
                   <span
-                    className={`shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                    className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
                       r.status === "APPROVED"
-                        ? "border-green-500/30 text-green-400"
+                        ? "bg-neutral-800 text-neutral-300"
                         : r.status === "REJECTED"
-                          ? "border-red-500/30 text-red-400"
-                          : "border-neutral-800 text-neutral-400"
+                          ? "bg-red-950/30 text-red-400"
+                          : "bg-neutral-800 text-neutral-500"
                     }`}
                   >
                     {r.status}
@@ -119,10 +124,9 @@ export default function PendingRequestsPage() {
                 </div>
               </div>
             )
-          ))}
+          )}
         </div>
       )}
     </div>
   );
 }
-

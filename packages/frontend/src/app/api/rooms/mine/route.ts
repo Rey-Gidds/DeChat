@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders } from "@/lib/api-auth";
 import {
   enrichMembershipUsers,
   type MembershipDoc,
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   const roomMap = new Map(rooms.map((r) => [r._id.toString(), r]));
   const enriched = await enrichMembershipUsers(memberships);
 
-  return NextResponse.json({
+  return applyAuthHeaders(NextResponse.json({
     memberships: enriched.map((m) => ({
       ...m,
       room: (() => {
@@ -56,5 +56,5 @@ export async function GET(req: Request) {
         };
       })(),
     })),
-  });
+  }), authResult.responseHeaders);
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
+import { Search } from "lucide-react";
 
 interface TagStat {
   tag: string;
@@ -46,7 +47,6 @@ export function TrendingTags({
     };
   }, []);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -57,7 +57,6 @@ export function TrendingTags({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Close on Escape
   useEffect(() => {
     function handler(e: KeyboardEvent) {
       if (e.key === "Escape") setActivePanel(null);
@@ -83,19 +82,18 @@ export function TrendingTags({
     return t.tag.includes(debouncedSearch.toLowerCase().trim());
   });
 
-  // Don't render anything if no data at all
   if (trending.length === 0 && popular.length === 0) return null;
 
   return (
-    <div ref={ref} className="relative flex items-center gap-2">
+    <div ref={ref} className="relative flex items-center gap-1.5 shrink-0">
       {trending.length > 0 && (
         <button
           type="button"
           onClick={() => togglePanel("trending")}
-          className={`px-3 py-2 text-[10px] uppercase tracking-wider border transition ${
+          className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
             activePanel === "trending"
-              ? "border-neutral-500 bg-neutral-900 text-white"
-              : "border-neutral-800 bg-black text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+              ? "bg-white text-black"
+              : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
           }`}
         >
           Trending
@@ -105,39 +103,42 @@ export function TrendingTags({
         <button
           type="button"
           onClick={() => togglePanel("popular")}
-          className={`px-3 py-2 text-[10px] uppercase tracking-wider border transition ${
+          className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition ${
             activePanel === "popular"
-              ? "border-neutral-500 bg-neutral-900 text-white"
-              : "border-neutral-800 bg-black text-neutral-500 hover:border-neutral-600 hover:text-neutral-300"
+              ? "bg-white text-black"
+              : "bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
           }`}
         >
-          Most Used
+          Popular
         </button>
       )}
 
       {/* Dropdown panel */}
       {activePanel && (
-        <div className={`${direction === "right" ? "left-0" : "right-0"} absolute top-full z-10 mt-1 w-72 border border-neutral-800 bg-neutral-950 shadow-xl sm:w-80`}>
+        <div className={`${direction === "right" ? "left-0" : "right-0"} absolute top-full z-20 mt-1.5 w-72 rounded-2xl border border-neutral-800 bg-neutral-950 p-1.5 shadow-2xl overflow-hidden sm:w-80`}>
           {/* Header label */}
-          <div className="border-b border-neutral-800 px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-neutral-600">
-            {activePanel === "trending" ? "Trending" : "Most Used"}
+          <div className="px-3 py-2 text-[10px] uppercase tracking-[0.2em] text-neutral-500 font-semibold">
+            {activePanel === "trending" ? "Trending Tags" : "Most Used Tags"}
           </div>
 
           {/* Search */}
-          <div className="border-b border-neutral-800 p-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search tags..."
-              autoFocus
-              className="w-full border border-neutral-800 bg-black px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-white outline-none focus:border-neutral-500 placeholder:text-neutral-600"
-            />
+          <div className="p-1.5">
+            <div className="relative flex items-center rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2">
+              <Search size={12} className="text-neutral-500 mr-2 shrink-0" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tags..."
+                autoFocus
+                className="w-full bg-transparent text-xs text-white outline-none placeholder:text-neutral-600"
+              />
+            </div>
           </div>
 
           {/* Tag list */}
-          <div className="max-h-60 overflow-y-auto">
+          <div className="max-h-56 overflow-y-auto mt-1 scrollbar-thin px-1">
             {filteredTags.length === 0 ? (
-              <div className="px-3 py-6 text-center text-[10px] uppercase tracking-wider text-neutral-600">
+              <div className="py-8 text-center text-xs text-neutral-600">
                 {debouncedSearch ? "No matching tags" : "No tags available"}
               </div>
             ) : (
@@ -145,11 +146,14 @@ export function TrendingTags({
                 <button
                   key={t.tag}
                   type="button"
-                  onClick={() => onSelect(t.tag)}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-[10px] uppercase tracking-wider text-neutral-400 transition hover:bg-neutral-900 hover:text-white"
+                  onClick={() => {
+                    onSelect(t.tag);
+                    setActivePanel(null);
+                  }}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs text-neutral-300 transition hover:bg-neutral-900 hover:text-white"
                 >
-                  <span>{t.tag}</span>
-                  <span className="text-neutral-600">{t.totalCount}</span>
+                  <span className="font-medium">#{t.tag}</span>
+                  <span className="text-[10px] text-neutral-600 font-mono bg-neutral-900/50 px-2 py-0.5 rounded-full border border-neutral-800/40">{t.totalCount}</span>
                 </button>
               ))
             )}

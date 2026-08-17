@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders } from "@/lib/api-auth";
 import { parseObjectId } from "@/lib/models";
 import { getMembership } from "@/lib/membership-db";
 import { createWsTicket } from "@/lib/ws-ticket";
@@ -41,9 +41,9 @@ export async function POST(req: Request) {
 
   const ticket = createWsTicket(authResult.session.user.id, roomId.toString());
 
-  return NextResponse.json({
+  return applyAuthHeaders(NextResponse.json({
     ticket,
     expiresInMs: 60_000,
     wsUrl: process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3001",
-  });
+  }), authResult.responseHeaders);
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders } from "@/lib/api-auth";
 
 export async function GET(req: Request) {
   const authResult = await requireSession(req);
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
 
   const roomMap = new Map(rooms.map((r: any) => [r._id.toString(), r]));
 
-  return NextResponse.json({
+  return applyAuthHeaders(NextResponse.json({
     requests: memberships.map((m: any) => {
       const room = roomMap.get(m.roomId.toString()) ?? null;
       return {
@@ -60,6 +60,6 @@ export async function GET(req: Request) {
           : null,
       };
     }),
-  });
+  }), authResult.responseHeaders);
 }
 

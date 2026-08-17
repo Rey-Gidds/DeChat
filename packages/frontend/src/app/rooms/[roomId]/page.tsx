@@ -490,6 +490,15 @@ export default function RoomChatPage() {
     }
   }, [showOptions, scrollToBottom]);
 
+  // Scroll to bottom when typing indicator appears — only if near the bottom
+  useEffect(() => {
+    if (typingUsers.length > 0 && shouldStickToBottomRef.current) {
+      requestAnimationFrame(() => {
+        scrollToBottom("smooth");
+      });
+    }
+  }, [typingUsers.length, scrollToBottom]);
+
   const handleScroll = useCallback(() => {
     const el = listRef.current;
     if (!el) return;
@@ -2736,6 +2745,7 @@ export default function RoomChatPage() {
                     onImageClick={(message) => setViewerMessageId(message.id)}
                     jumpTargetId={jumpTargetId}
                     hideEmpty={isBootstrapping}
+                    isTyping={typingUsers.length > 0}
                   />
 
                   {/* Down-arrow button when not at bottom */}
@@ -2747,12 +2757,6 @@ export default function RoomChatPage() {
                     />
                   )}
                 </div>
-
-                {typingSummary && (
-                  <p className="shrink-0 px-4 pb-1 text-[11px] text-neutral-500">
-                    {typingSummary}
-                  </p>
-                )}
 
                 <ChatInput
                   draft={editingMessageId ? editingDraft : draft}

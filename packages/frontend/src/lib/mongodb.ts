@@ -30,10 +30,17 @@ function getConnectionPromise(): Promise<MongoClient> {
 }
 
 /** Ensures MongoDB is connected; reconnects after dev HMR closes the topology. */
+let connectionVerified = false;
+
 export async function ensureMongoConnected(): Promise<MongoClient> {
+  if (connectionVerified && globalMongo.__mongoClient) {
+    return globalMongo.__mongoClient;
+  }
+
   try {
     const client = await getConnectionPromise();
     await client.db(DB_NAME).command({ ping: 1 });
+    connectionVerified = true;
     return client;
   } catch {
     if (globalMongo.__mongoClient) {
@@ -43,6 +50,7 @@ export async function ensureMongoConnected(): Promise<MongoClient> {
     globalMongo.__mongoClientPromise = undefined;
     const client = await startConnection();
     await client.db(DB_NAME).command({ ping: 1 });
+    connectionVerified = true;
     return client;
   }
 }

@@ -2,20 +2,20 @@
 
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import Image from "next/image";
 
 interface ModalProps {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
-  /** Extra class names on the inner panel (e.g. max-w-md) */
   className?: string;
+  subtitle?: string;
+  headerIcon?: React.ReactNode;
 }
 
-/** Accessible modal backdrop + panel with trap-focus and Escape support. */
-export function Modal({ title, onClose, children, className = "" }: ModalProps) {
+export function Modal({ title, onClose, children, className = "", subtitle, headerIcon }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -24,7 +24,6 @@ export function Modal({ title, onClose, children, className = "" }: ModalProps) 
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  // Trap focus inside modal
   useEffect(() => {
     const el = panelRef.current;
     if (!el) return;
@@ -36,7 +35,7 @@ export function Modal({ title, onClose, children, className = "" }: ModalProps) 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
@@ -44,19 +43,32 @@ export function Modal({ title, onClose, children, className = "" }: ModalProps) 
     >
       <div
         ref={panelRef}
-        className={`relative flex w-full flex-col border border-neutral-800 bg-neutral-950 shadow-2xl ${className}`}
+        className={`relative flex w-full flex-col rounded-2xl border border-neutral-800/80 bg-neutral-950 shadow-2xl ${className}`}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800 px-4 py-3">
-          <h2 id="modal-title" className="text-xs font-semibold uppercase tracking-wider text-white">
-            {title}
-          </h2>
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-neutral-800/60 px-4 py-3.5">
+          <div className="flex items-center gap-2.5">
+            {headerIcon ? (
+              headerIcon
+            ) : (
+              <Image src="/icons/dechat_logo_orig.png" alt="" width={16} height={16} className="opacity-60 rounded-full" />
+            )}
+            <div>
+              <h2 id="modal-title" className="text-xs font-semibold text-white leading-tight">
+                {title}
+              </h2>
+              {subtitle && (
+                <p className="text-[10px] text-neutral-500 mt-0.5">{subtitle}</p>
+              )}
+            </div>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-neutral-500 transition hover:text-white"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-500 transition hover:bg-neutral-800 hover:text-white"
             aria-label="Close"
           >
-            <X size={16} />
+            <X size={15} />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>

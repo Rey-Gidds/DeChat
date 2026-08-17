@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
-import { requireSession } from "@/lib/api-auth";
+import { requireSession, applyAuthHeaders, invalidateCachedSession } from "@/lib/api-auth";
 import { ensureMongoConnected } from "@/lib/mongodb";
 
 const USERNAME_MAX = 20;
@@ -12,24 +12,20 @@ export async function GET(req: Request) {
   const authResult = await requireSession(req);
   if ("error" in authResult) return authResult.error;
 
-  const userId = new ObjectId(authResult.session.user.id);
-  const user = await db.collection("user").findOne(
-    { _id: userId },
-    { projection: { name: 1, email: 1, image: 1, publicKey: 1, pfp: 1 } }
+  const user = authResult.session.user;
+
+  return applyAuthHeaders(
+    NextResponse.json({
+      id: user.id,
+      name: user.name ?? null,
+      email: user.email ?? null,
+      image: (user.image as string | undefined) ?? null,
+      publicKey: (user.publicKey as string | undefined) ?? null,
+      pfp: (user.pfp as string | undefined) ?? null,
+      encryptionEnabled: (user.encryptionEnabled as boolean | undefined) ?? false,
+    }),
+    authResult.responseHeaders
   );
-
-  if (!user) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  return NextResponse.json({
-    id: userId.toString(),
-    name: user.name ?? authResult.session.user.name,
-    email: user.email ?? authResult.session.user.email,
-    image: user.image ?? null,
-    publicKey: (user.publicKey as string | undefined) ?? null,
-    pfp: (user.pfp as string | undefined) ?? null,
-  });
 }
 
 export async function PATCH(req: Request) {
@@ -69,7 +65,12 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true, name });
+    // Invalidate cached session (in-memory + cookieCache) so the next
+    // request gets the updated name from the database.
+    return invalidateCachedSession(
+      NextResponse.json({ ok: true, name }),
+      req
+    );
   } catch (err) {
     console.error("Profile update error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

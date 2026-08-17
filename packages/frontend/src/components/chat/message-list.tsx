@@ -324,7 +324,7 @@ export function MessageBubble({
               }}
               onMouseEnter={() => setShowInfoBtn(true)}
               onMouseLeave={() => setShowInfoBtn(false)}
-              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-neutral-600 hover:text-neutral-300 hover:bg-neutral-800 transition-all duration-150 ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:text-neutral-300 hover:bg-neutral-800/80 transition-all duration-150 ${
                 showInfoBtn ? "opacity-100" : "opacity-0"
               }`}
               aria-label="Message actions"
@@ -345,10 +345,10 @@ export function MessageBubble({
               swipeDelta > 0 ? "transition-none" : "transition-transform duration-200 ease-out"
             } ${
               isOwn
-                ? "bg-white text-black"
-                : "border border-neutral-700 bg-neutral-900 text-neutral-100"
-            } ${isMedia || isGif ? "p-0 overflow-hidden" : "px-3 py-2"} ${
-              highlighted ? "shadow-[-3px_0_0_0_rgba(96,165,250,0.4)]" : ""
+                ? "bg-white text-black rounded-[18px] rounded-br-[4px]"
+                : "bg-[#1e1e1e] text-neutral-100 rounded-[18px] rounded-bl-[4px]"
+            } ${isMedia || isGif ? "p-0 overflow-hidden" : "px-3.5 py-2.5"} ${
+              highlighted ? "ring-1 ring-neutral-500/50 ring-offset-1 ring-offset-[#111]" : ""
             }`}
             style={{
               transform:
@@ -365,16 +365,20 @@ export function MessageBubble({
             {message.replyTo && (
               <button
                 onClick={() => onQuoteClick?.(message.replyTo!.messageId)}
-                className="mb-1.5 flex w-full cursor-pointer border-l-2 border-neutral-700 bg-neutral-800/50 pl-2 pr-1 pt-1 pb-0.5 text-left hover:bg-neutral-800 transition-colors"
+                className={`mb-2 flex w-full cursor-pointer rounded-xl border-l-2 pl-2.5 pr-1 pt-1.5 pb-1 text-left transition-colors ${
+                  isOwn
+                    ? "border-neutral-600 bg-neutral-900/10 hover:bg-neutral-900/15"
+                    : "border-neutral-500 bg-black/45 hover:bg-black/55"
+                }`}
               >
                 <div className="min-w-0">
-                  <span className="block truncate text-[11px] font-medium text-neutral-300">
+                  <span className={`block truncate text-[11px] font-bold ${isOwn ? "text-neutral-800" : "text-neutral-300"}`}>
                     {message.replyTo.senderName}
                     {message.replyTo.senderUserIndex != null
                       ? ` #${message.replyTo.senderUserIndex}`
                       : ""}
                   </span>
-                  <span className="block line-clamp-1 break-all text-[11px] text-neutral-500">
+                  <span className={`block line-clamp-1 break-all text-[11px] ${isOwn ? "text-neutral-600 font-semibold" : "text-neutral-400"}`}>
                     {replyPreview ?? "..."}
                   </span>
                 </div>
@@ -515,6 +519,7 @@ interface MessageListProps {
   jumpTargetId?: string | null;
   /** When true, suppresses the empty-state placeholder (e.g. during bootstrapping). */
   hideEmpty?: boolean;
+  isTyping?: boolean;
 }
 
 export function MessageList({
@@ -537,6 +542,7 @@ export function MessageList({
   onImageClick,
   jumpTargetId,
   hideEmpty,
+  isTyping,
 }: MessageListProps) {
   const topSentinelRef = useRef<HTMLDivElement>(null);
   const bottomSentinelRef = useRef<HTMLDivElement>(null);
@@ -571,7 +577,7 @@ export function MessageList({
     <div
       ref={listRef}
       onScroll={onScroll}
-      className="message-list-container flex-1 overflow-y-auto bg-grid-blueprint px-3 py-4 sm:px-4"
+      className="message-list-container flex-1 overflow-y-auto bg-chat-area px-3 py-4 sm:px-4"
       style={{ touchAction: "pan-y", overscrollBehavior: "contain" }}
     >
       {/* ── Top sentinel: triggers infinite scroll upward ── */}
@@ -587,7 +593,7 @@ export function MessageList({
         </div>
       )}
 
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isTyping ? (
         hideEmpty ? null : (
           <div className="flex h-full min-h-[200px] items-center justify-center">
             <p className="text-xs text-neutral-500">No messages yet. Say hello.</p>
@@ -597,20 +603,31 @@ export function MessageList({
         <div className="space-y-3">
           {messages.map((message) => (
             <MessageBubble
-              key={message.id}
-              message={message}
-              showSender
-              roomKey={roomKey}
-              roomId={roomId}
-              onReply={onReply}
-              onImageClick={onImageClick}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onQuoteClick={onQuoteClick}
-              onShowMenu={onShowMenu}
-              highlighted={jumpTargetId === message.id}
+               key={message.id}
+               message={message}
+               showSender
+               roomKey={roomKey}
+               roomId={roomId}
+               onReply={onReply}
+               onImageClick={onImageClick}
+               onEdit={onEdit}
+               onDelete={onDelete}
+               onQuoteClick={onQuoteClick}
+               onShowMenu={onShowMenu}
+               highlighted={jumpTargetId === message.id}
             />
           ))}
+          {isTyping && (
+            <div className="flex items-start mt-2">
+              <div className="rounded-2xl bg-[#1e1e1e] border border-neutral-800/40 px-3.5 py-2.5 flex items-center justify-center">
+                <span className="flex items-center gap-1.5 h-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-typing-dot-1" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-typing-dot-2" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400 animate-typing-dot-3" />
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

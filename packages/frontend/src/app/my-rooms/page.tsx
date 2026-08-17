@@ -29,7 +29,7 @@ export default function MyRoomsPage() {
   if (isPending) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-xs uppercase tracking-wider text-neutral-600">Loading...</p>
+        <p className="text-xs uppercase tracking-wider text-neutral-600 animate-pulse">Loading...</p>
       </div>
     );
   }
@@ -46,58 +46,63 @@ export default function MyRoomsPage() {
   const displayError = actionError || (swrError instanceof Error ? swrError.message : "");
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mb-6 border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
-        <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">My Rooms</h1>
-        <p className="mt-2 text-sm text-neutral-500">Manage rooms you own — disable, restore, or adjust settings.</p>
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+      {/* Page header */}
+      <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
+        <h1 className="text-xl font-semibold text-white sm:text-2xl">My Rooms</h1>
+        <p className="mt-1 text-sm text-neutral-500">Manage rooms you own — disable, restore, or adjust settings.</p>
       </div>
 
       {displayError && (
-        <div className="mb-4 border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">{displayError}</div>
+        <div className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-300">
+          {displayError}
+        </div>
       )}
 
       {isLoading ? (
-        <div className="border border-neutral-900 bg-neutral-950 p-6">
-          <p className="text-xs uppercase tracking-wider text-neutral-600">Loading…</p>
+        <div className="rounded-xl border border-neutral-900 bg-neutral-950 p-6">
+          <p className="text-xs uppercase tracking-wider text-neutral-600 animate-pulse">Loading…</p>
         </div>
       ) : ownedRooms.length === 0 ? (
-        <div className="border border-dashed border-neutral-800 px-6 py-16 text-center">
+        <div className="rounded-2xl border border-dashed border-neutral-800 px-6 py-16 text-center">
           <p className="text-sm text-neutral-500">You don&apos;t own any rooms yet.</p>
           <Link href="/" className="mt-4 inline-block text-xs uppercase tracking-wider text-white underline">Create one</Link>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4.5">
           {ownedRooms.map((r) => {
             const roomId = r.roomId;
             const isDisabled = Boolean(r.room?.isDisabled);
             return (
               <Link key={roomId} href={`/rooms/${roomId}`}>
-                <div className="border border-neutral-900 bg-black p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
+                <div className="rounded-xl border border-neutral-900 bg-black p-4 hover:border-neutral-700 hover:bg-neutral-950 transition-all group">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-semibold text-white hover:underline">
+                        <p className="truncate text-sm font-semibold text-white">
                           {r.room?.name || "Unknown Room"}
                         </p>
                         {isDisabled && (
-                          <span className="shrink-0 border border-red-500/30 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-red-400">Disabled</span>
+                          <span className="shrink-0 rounded-full bg-neutral-800 px-2 py-0.5 text-[9px] uppercase tracking-wider text-neutral-400">
+                            Disabled
+                          </span>
                         )}
                       </div>
-                      <p className="mt-1 text-[10px] text-neutral-500">
+                      <p className="mt-0.5 text-[10px] text-neutral-500">
                         {r.room?.memberCount ?? 0}/{r.room?.maxMembers ?? 500} members
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        variant={isDisabled ? "primary" : "ghost"}
-                        size="sm"
-                        disabled={togglingId === roomId}
-                        onClick={(e) => void handleToggleDisable(e, roomId)}
-                        className={`text-[10px] ${isDisabled ? "" : "border border-red-500/30 text-red-400 hover:border-red-500/60"}`}
-                      >
-                        {togglingId === roomId ? "..." : isDisabled ? "Restore" : "Disable"}
-                      </Button>
-                    </div>
+                    <button
+                      onClick={(e) => void handleToggleDisable(e, roomId)}
+                      disabled={togglingId === roomId}
+                      className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-medium transition disabled:opacity-50 ${
+                        isDisabled
+                          ? "bg-white text-black hover:bg-neutral-200"
+                          : "border border-neutral-700 text-neutral-400 hover:bg-neutral-800 hover:text-white"
+                      }`}
+                    >
+                      {togglingId === roomId ? "..." : isDisabled ? "Restore" : "Disable"}
+                    </button>
                   </div>
                 </div>
               </Link>
