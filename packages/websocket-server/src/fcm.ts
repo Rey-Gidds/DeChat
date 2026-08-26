@@ -85,8 +85,25 @@ export async function sendFCMPushNotification(
           Urgency: "high",
           TTL: "604800",
         },
+        // webpush.notification is required to wake a completely closed browser.
+        // Data-only messages are silently dropped by Chrome/Edge/Firefox when the
+        // browser process is not running. Adding a notification payload here
+        // signals the OS push daemon to start the browser and fire the SW push event.
+        notification: {
+          title: payload.roomName,
+          body: `${payload.unreadCount} unread message${payload.unreadCount !== 1 ? "s" : ""}`,
+          icon: "https://dechat-alpha.vercel.app/icons/dechat_logo_192.png",
+          badge: "https://dechat-alpha.vercel.app/icons/dechat_logo_192.png",
+          tag: `room-${payload.roomId}`,
+          renotify: true,
+          data: {
+            roomId: payload.roomId,
+            version: String(payload.version),
+          },
+        },
         fcmOptions: {
-          link: `/rooms/${payload.roomId}`,
+          // Must be an absolute URL — relative paths are rejected by FCM
+          link: `https://dechat-alpha.vercel.app/rooms/${payload.roomId}`,
         },
       },
     };

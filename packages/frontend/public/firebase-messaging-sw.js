@@ -213,7 +213,12 @@ async function syncUnreadAndNotify() {
 // ── 3. Notification click handler ─────────────────────────────────────────────
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || "/";
+
+  const data = event.notification.data || {};
+  // FCM webpush.notification.data carries roomId; fall back to an explicit url field
+  const roomId = data.roomId;
+  const targetUrl = data.url
+    || (roomId ? `https://dechat-alpha.vercel.app/rooms/${roomId}` : "https://dechat-alpha.vercel.app/");
 
   event.waitUntil(
     clients
@@ -221,7 +226,7 @@ self.addEventListener("notificationclick", (event) => {
       .then((clientList) => {
         // Focus an already-open tab pointing to this room
         for (const client of clientList) {
-          if (client.url.includes(targetUrl) && "focus" in client) {
+          if (client.url.includes(roomId || targetUrl) && "focus" in client) {
             return client.focus();
           }
         }
