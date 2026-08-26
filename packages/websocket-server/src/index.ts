@@ -22,6 +22,7 @@ import { InMemoryPresenceStore, type PresenceStore } from "./presence-store";
 import { subscriptionManager } from "./subscription-manager";
 import { TypingLeaseManager } from "./typing-lease";
 import { UnreadCounterManager } from "./unread-counter";
+import { sendFCMPushNotification } from "./fcm";
 import type { AuthedSocket, MembershipCacheEntry } from "./types";
 
 const app = express();
@@ -700,6 +701,11 @@ io.on("connection", async (socket: AuthedSocket) => {
         // ── NEW: Per-subscriber unread increment (skip sender + viewers) ──
         const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
         const createdAtDate = new Date(savedMessage.createdAt);
+
+        // Fetch room title for FCM push
+        const roomMetaArr = await getRoomsMetadata([roomId]);
+        const roomName = roomMetaArr[0]?.roomName || "DeChat Room";
+
         for (const sRaw of roomSockets) {
           const s = sRaw as any;
           if (s.data.userId === socket.data.userId) continue;           // skip sender
@@ -713,6 +719,14 @@ io.on("connection", async (socket: AuthedSocket) => {
             senderName: senderInfo.name,
             messageType,
             createdAt: savedMessage.createdAt,
+          });
+
+          // Send FCM push notification (handled client-side / by SW if app is closed / backgrounded)
+          void sendFCMPushNotification(s.data.userId, {
+            roomId,
+            roomName,
+            unreadCount: count,
+            version,
           });
         }
       } catch (err) {

@@ -11,5 +11,9 @@
     "build:frontend": "npm run build --workspace=packages/frontend",
     "build:server": "npm run build --workspace=packages/websocket-server",
     "install:all": "npm install"
+  },
+  "dependencies": {
+    "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0"
   }
 }

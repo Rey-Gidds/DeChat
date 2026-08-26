@@ -14,6 +14,7 @@ import { UnlockDialog } from "@/components/key-recovery/unlock-dialog";
 import { Compass, Clock, List, Grid3X3, User, LogOut } from "lucide-react";
 import { useUser } from "@/hooks/use-swr-hooks";
 import { GlobalSocketProvider } from "@/lib/global-socket-context";
+import { useEffect } from "react";
 
 // Profile excluded from footer — lives in header only
 const NAV_ITEMS = [
@@ -43,6 +44,56 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const showKeygen = session?.user && !isPending && !isAuthPage && state === "setup-required";
   const userName = userProfile?.name || session?.user?.name || session?.user?.email;
   const pfp = userProfile?.pfp;
+
+  // ── FCM Service Worker & Push Registration ─────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !session?.user?.id) return;
+
+    const queryParams = new URLSearchParams({
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "",
+      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "",
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "",
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "",
+      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "",
+      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
+    }).toString();
+
+    const swUrl = `/firebase-messaging-sw.js?${queryParams}`;
+
+    navigator.serviceWorker
+      .register(swUrl)
+      .then(async (registration) => {
+        // ── FCM token ────────────────────────────────────────────
+        const { requestFCMToken } = await import("@/lib/firebase-messaging");
+        const token = await requestFCMToken();
+        if (token) {
+          await fetch("/api/fcm/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ token }),
+          });
+        }
+
+        // ── Background Sync: register sync tag when going offline ─
+        // The SW fires "dechat-unread-sync" when network is restored,
+        // even if the app tab is completely closed.
+        function scheduleUnreadSync() {
+          if ("sync" in registration) {
+            (registration as any).sync.register("dechat-unread-sync").catch(
+              (err: unknown) => console.warn("[FCM] Background sync registration failed:", err)
+            );
+          }
+        }
+
+        window.addEventListener("offline", scheduleUnreadSync);
+        // Also register immediately in case we were already offline at startup
+        if (!navigator.onLine) scheduleUnreadSync();
+
+        return () => window.removeEventListener("offline", scheduleUnreadSync);
+      })
+      .catch((err) => console.warn("[FCM] SW registration / token fetch failed:", err));
+  }, [session?.user?.id]);
 
   return (
     <div className="flex h-screen flex-col overflow-x-hidden bg-black text-neutral-200">

@@ -73,7 +73,7 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
         return;
       }
       const data = await res.json();
-      if (data.counts) {
+      if (data.counts && Array.isArray(data.counts)) {
         await syncFromServer(data.counts);
       }
     } catch (err) {

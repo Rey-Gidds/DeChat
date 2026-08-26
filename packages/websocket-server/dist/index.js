@@ -15,6 +15,7 @@ const presence_store_1 = require("./presence-store");
 const subscription_manager_1 = require("./subscription-manager");
 const typing_lease_1 = require("./typing-lease");
 const unread_counter_1 = require("./unread-counter");
+const fcm_1 = require("./fcm");
 const app = (0, express_1.default)();
 const allowedOrigin = process.env.CORS_ORIGIN || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 app.use((0, cors_1.default)({
@@ -583,6 +584,9 @@ io.on("connection", async (socket) => {
             // ── NEW: Per-subscriber unread increment (skip sender + viewers) ──
             const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
             const createdAtDate = new Date(savedMessage.createdAt);
+            // Fetch room title for FCM push
+            const roomMetaArr = await (0, db_1.getRoomsMetadata)([roomId]);
+            const roomName = roomMetaArr[0]?.roomName || "DeChat Room";
             for (const sRaw of roomSockets) {
                 const s = sRaw;
                 if (s.data.userId === socket.data.userId)
@@ -598,6 +602,13 @@ io.on("connection", async (socket) => {
                     senderName: senderInfo.name,
                     messageType,
                     createdAt: savedMessage.createdAt,
+                });
+                // Send FCM push notification (handled client-side / by SW if app is closed / backgrounded)
+                void (0, fcm_1.sendFCMPushNotification)(s.data.userId, {
+                    roomId,
+                    roomName,
+                    unreadCount: count,
+                    version,
                 });
             }
         }
