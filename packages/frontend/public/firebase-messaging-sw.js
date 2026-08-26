@@ -7,21 +7,25 @@
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
 
-// ── Firebase init (config injected via query string at SW registration time) ──
+// ── Firebase init (dynamic query params with fallbacks for cold SW wake-up) ──
 const urlParams = new URLSearchParams(self.location.search);
 const firebaseConfig = {
-  apiKey: urlParams.get("apiKey") || "",
-  authDomain: urlParams.get("authDomain") || "",
-  projectId: urlParams.get("projectId") || "",
-  storageBucket: urlParams.get("storageBucket") || "",
-  messagingSenderId: urlParams.get("messagingSenderId") || "",
-  appId: urlParams.get("appId") || "",
+  apiKey: urlParams.get("apiKey") || "AIzaSyDKSHIJkvRILXI56HKRojZyTn_vIJnE7Zc",
+  authDomain: urlParams.get("authDomain") || "dechat-3cd8a.firebaseapp.com",
+  projectId: urlParams.get("projectId") || "dechat-3cd8a",
+  storageBucket: urlParams.get("storageBucket") || "dechat-3cd8a.firebasestorage.app",
+  messagingSenderId: urlParams.get("messagingSenderId") || "90574538789",
+  appId: urlParams.get("appId") || "1:90574538789:web:e168540b3231acc1e797cc",
 };
 
 let messaging = null;
-if (firebaseConfig.projectId) {
-  firebase.initializeApp(firebaseConfig);
-  messaging = firebase.messaging();
+try {
+  if (firebaseConfig.projectId) {
+    firebase.initializeApp(firebaseConfig);
+    messaging = firebase.messaging();
+  }
+} catch (err) {
+  console.warn("[SW] Firebase init warning:", err);
 }
 
 // ── IDB helper (same DB as the app) ──────────────────────────────────────────
@@ -128,13 +132,9 @@ if (messaging) {
     const unreadCount = parseInt(data.unreadCount || "1", 10);
     const version = parseInt(data.version || "1", 10);
 
-    if (!roomId) return;
-
-    // waitUntil keeps the SW alive until the notification is shown
-    return self.registration.active &&
-      self.waitUntil
-        ? undefined // handled below
-        : showVersionedNotification(roomId, roomName, unreadCount, version);
+    if (roomId) {
+      return showVersionedNotification(roomId, roomName, unreadCount, version);
+    }
   });
 }
 
@@ -142,17 +142,19 @@ if (messaging) {
 self.addEventListener("push", (event) => {
   if (!event.data) return;
   try {
-    const data = event.data.json();
-    const d = data.data || {};
+    const rawData = event.data.json();
+    console.log("[SW] Raw push payload:", rawData);
+    const d = rawData.data || rawData.notification || rawData;
     const roomId = d.roomId;
-    const roomName = d.roomName || "DeChat Room";
+    const roomName = d.roomName || d.title || "DeChat Room";
     const unreadCount = parseInt(d.unreadCount || "1", 10);
     const version = parseInt(d.version || "1", 10);
+
     if (roomId) {
       event.waitUntil(showVersionedNotification(roomId, roomName, unreadCount, version));
     }
-  } catch {
-    // not JSON or missing fields — ignore
+  } catch (e) {
+    console.warn("[SW] Push event parse warning:", e);
   }
 });
 
@@ -204,7 +206,6 @@ async function syncUnreadAndNotify() {
     }
   } catch (err) {
     console.error("[SW] syncUnreadAndNotify error:", err);
-    // Re-throw so the browser retries the sync on next opportunity
     throw err;
   }
 }

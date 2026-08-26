@@ -66,6 +66,54 @@ export async function isActiveMember(
   return Boolean(membership);
 }
 
+// ── In-Memory Approved Room Members Cache ─────────────────────────────────────
+const MEMBER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes TTL
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutes cleanup script interval
+
+interface MemberCacheEntry {
+  memberIds: string[];
+  fetchedAt: number;
+}
+
+const memberCache = new Map<string, MemberCacheEntry>();
+
+// Periodic cleanup script running every 5 minutes to purge entries older than 10 mins
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, entry] of memberCache.entries()) {
+    if (now - entry.fetchedAt > MEMBER_CACHE_TTL_MS) {
+      memberCache.delete(roomId);
+    }
+  }
+}, CLEANUP_INTERVAL_MS);
+
+export function invalidateRoomMembersCache(roomId?: string): void {
+  if (roomId) {
+    memberCache.delete(roomId);
+  } else {
+    memberCache.clear();
+  }
+}
+
+export async function getApprovedRoomMemberIds(roomId: string): Promise<string[]> {
+  const now = Date.now();
+  const cached = memberCache.get(roomId);
+  if (cached && now - cached.fetchedAt <= MEMBER_CACHE_TTL_MS) {
+    return cached.memberIds;
+  }
+
+  const db = await getDb();
+  const memberships = await db.collection("room_memberships").find({
+    roomId: new ObjectId(roomId),
+    status: "APPROVED",
+    isBlocked: false,
+  }, { projection: { userId: 1 } }).toArray();
+
+  const memberIds = memberships.map((m: any) => m.userId.toHexString());
+  memberCache.set(roomId, { memberIds, fetchedAt: now });
+  return memberIds;
+}
+
 export interface ReplyToSubdocument {
   messageId: string;
   senderId: string;

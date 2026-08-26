@@ -80,6 +80,15 @@ export async function sendFCMPushNotification(
           "apns-expiration": String(Math.floor(Date.now() / 1000) + 3600 * 24 * 7),
         },
       },
+      webpush: {
+        headers: {
+          Urgency: "high",
+          TTL: "604800",
+        },
+        fcmOptions: {
+          link: `/rooms/${payload.roomId}`,
+        },
+      },
     };
 
     const response = await getMessaging().sendEachForMulticast(message);

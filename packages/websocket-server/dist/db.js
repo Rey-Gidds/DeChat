@@ -4,6 +4,8 @@ exports.getDb = getDb;
 exports.isRoomDisabled = isRoomDisabled;
 exports.getSenderInfo = getSenderInfo;
 exports.isActiveMember = isActiveMember;
+exports.invalidateRoomMembersCache = invalidateRoomMembersCache;
+exports.getApprovedRoomMemberIds = getApprovedRoomMemberIds;
 exports.fetchMessagesSince = fetchMessagesSince;
 exports.persistEncryptedMessage = persistEncryptedMessage;
 exports.updateMessageContent = updateMessageContent;
@@ -60,6 +62,43 @@ async function isActiveMember(roomId, userId) {
         isBlocked: false,
     });
     return Boolean(membership);
+}
+// ── In-Memory Approved Room Members Cache ─────────────────────────────────────
+const MEMBER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes TTL
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes cleanup script interval
+const memberCache = new Map();
+// Periodic cleanup script running every 5 minutes to purge entries older than 10 mins
+setInterval(() => {
+    const now = Date.now();
+    for (const [roomId, entry] of memberCache.entries()) {
+        if (now - entry.fetchedAt > MEMBER_CACHE_TTL_MS) {
+            memberCache.delete(roomId);
+        }
+    }
+}, CLEANUP_INTERVAL_MS);
+function invalidateRoomMembersCache(roomId) {
+    if (roomId) {
+        memberCache.delete(roomId);
+    }
+    else {
+        memberCache.clear();
+    }
+}
+async function getApprovedRoomMemberIds(roomId) {
+    const now = Date.now();
+    const cached = memberCache.get(roomId);
+    if (cached && now - cached.fetchedAt <= MEMBER_CACHE_TTL_MS) {
+        return cached.memberIds;
+    }
+    const db = await getDb();
+    const memberships = await db.collection("room_memberships").find({
+        roomId: new mongodb_1.ObjectId(roomId),
+        status: "APPROVED",
+        isBlocked: false,
+    }, { projection: { userId: 1 } }).toArray();
+    const memberIds = memberships.map((m) => m.userId.toHexString());
+    memberCache.set(roomId, { memberIds, fetchedAt: now });
+    return memberIds;
 }
 async function fetchMessagesSince(roomId, userId, since, sinceId, limit = 100) {
     const db = await getDb();

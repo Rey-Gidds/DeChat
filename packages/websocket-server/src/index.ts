@@ -14,6 +14,7 @@ import {
   getSenderInfo,
   getDb,
   getRoomsMetadata,
+  getApprovedRoomMemberIds,
   incrementMutationVersion,
   fetchMutationPatches,
 } from "./db";
@@ -698,20 +699,33 @@ io.on("connection", async (socket: AuthedSocket) => {
           messageId: savedMessage._id,
         });
 
-        // ── NEW: Per-subscriber unread increment (skip sender + viewers) ──
-        const roomSockets = await io.in(`room:${roomId}`).fetchSockets();
+        // ── NEW: Per-subscriber unread increment & FCM push for ALL members (online & offline/closed) ──
+        const [memberUserIds, roomSockets, roomMetaArr] = await Promise.all([
+          getApprovedRoomMemberIds(roomId),
+          io.in(`room:${roomId}`).fetchSockets(),
+          getRoomsMetadata([roomId]),
+        ]);
+
+        const roomName = roomMetaArr[0]?.roomName || "DeChat Room";
         const createdAtDate = new Date(savedMessage.createdAt);
 
-        // Fetch room title for FCM push
-        const roomMetaArr = await getRoomsMetadata([roomId]);
-        const roomName = roomMetaArr[0]?.roomName || "DeChat Room";
-
+        // Identify sockets currently viewing this room
+        const activeViewerUserIds = new Set<string>();
         for (const sRaw of roomSockets) {
           const s = sRaw as any;
-          if (s.data.userId === socket.data.userId) continue;           // skip sender
-          if (s.data.viewingRoomId === roomId) continue;                // skip viewers
-          const { count, version } = await unreadCounters.increment(s.data.userId, roomId, createdAtDate);
-          io.to(`user:${s.data.userId}`).emit("user_unread_increment", {
+          if (s.data?.viewingRoomId === roomId && s.data?.userId) {
+            activeViewerUserIds.add(s.data.userId);
+          }
+        }
+
+        for (const memberUserId of memberUserIds) {
+          if (memberUserId === socket.data.userId) continue;          // skip sender
+          if (activeViewerUserIds.has(memberUserId)) continue;        // skip active room viewers
+
+          const { count, version } = await unreadCounters.increment(memberUserId, roomId, createdAtDate);
+
+          // Realtime Socket event (emitted to user channel, received if socket is connected)
+          io.to(`user:${memberUserId}`).emit("user_unread_increment", {
             roomId,
             unreadCount: count,
             version,
@@ -721,8 +735,8 @@ io.on("connection", async (socket: AuthedSocket) => {
             createdAt: savedMessage.createdAt,
           });
 
-          // Send FCM push notification (handled client-side / by SW if app is closed / backgrounded)
-          void sendFCMPushNotification(s.data.userId, {
+          // FCM Push notification (delivered by Firebase to Service Worker even when browser/app is CLOSED)
+          void sendFCMPushNotification(memberUserId, {
             roomId,
             roomName,
             unreadCount: count,
