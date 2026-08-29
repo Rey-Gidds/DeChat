@@ -4,6 +4,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaMetadata, GifMetadata, ReplyToInfo } from "@/lib/models";
 import { MediaMessage } from "./media-message";
+import { AudioMessage } from "./audio-message";
 import { decryptReplyPreview } from "@/lib/quoted-message";
 import { getRoomKeyVersion } from "@/lib/crypto";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -18,7 +19,7 @@ export interface UiMessage {
   senderName?: string | null;
   senderUserIndex?: number | null;
   senderPfp?: string | null;
-  messageType?: "text" | "image" | "video" | "gif";
+  messageType?: "text" | "image" | "video" | "gif" | "audio";
   mediaMetadata?: MediaMetadata;
   gifMetadata?: GifMetadata;
   // ── Reply / Edit ──────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const isOwn = message.isOwn;
   const isMedia = message.messageType === "image" || message.messageType === "video";
+  const isAudio = message.messageType === "audio";
   const isGif = message.messageType === "gif";
   const meta = message.mediaMetadata;
   const gifMeta = message.gifMetadata;
@@ -392,15 +394,31 @@ export function MessageBubble({
                 roomKey={roomKey}
                 iv={meta.iv}
                 mimeType={meta.mimeType}
-                type={meta.type}
-                width={meta.width}
-                height={meta.height}
+                type={meta.type as "image" | "video"}
+                width={(meta as any).width || 0}
+                height={(meta as any).height || 0}
                 thumbnailKey={"thumbnailKey" in meta ? meta.thumbnailKey : undefined}
                 thumbnailIv={"thumbnailIv" in meta ? meta.thumbnailIv : undefined}
                 ivBase={"ivBase" in meta ? meta.ivBase : undefined}
                 chunkSize={"chunkSize" in meta ? meta.chunkSize : undefined}
                 isOwn={isOwn}
                 onImageClick={onImageClick ? () => onImageClick(message) : undefined}
+                localUrl={meta.localUrl}
+                progress={message.progress}
+                progressStage={message.progressStage}
+                status={message.status}
+                onRetry={message.onRetry}
+              />
+            ) : isAudio && meta && roomKey ? (
+              <AudioMessage
+                objectKey={meta.objectKey}
+                roomKey={roomKey}
+                mimeType={meta.mimeType}
+                iv={"iv" in meta ? meta.iv : undefined}
+                chunkIvMap={"chunkIvMap" in meta ? meta.chunkIvMap : undefined}
+                chunkSize={"chunkSize" in meta ? meta.chunkSize : undefined}
+                duration={"duration" in meta ? meta.duration : undefined}
+                isOwn={isOwn}
                 localUrl={meta.localUrl}
                 progress={message.progress}
                 progressStage={message.progressStage}

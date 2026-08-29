@@ -119,7 +119,7 @@ export interface ReplyToSubdocument {
   senderId: string;
   senderName: string;
   senderUserIndex: number | null;
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   previewIv: string | null;
   previewCiphertext: string | null;
   previewAuthTag: string | null;
@@ -131,7 +131,7 @@ export interface PersistEncryptedMessageInput {
   ciphertext: string;
   iv: string;
   authTag: string;
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   roomKeyVersion?: number;
   replyTo?: ReplyToSubdocument | null;
 }
@@ -218,7 +218,7 @@ export async function fetchMessagesSince(
       ciphertext: doc.ciphertext as string,
       iv: doc.iv as string,
       authTag: doc.authTag as string,
-      messageType: doc.messageType as "text" | "image" | "video",
+      messageType: doc.messageType as "text" | "image" | "video" | "gif" | "audio",
       roomKeyVersion: typeof doc.roomKeyVersion === "number" ? doc.roomKeyVersion : 0,
       replyTo,
       editedAt: doc.editedAt ? (doc.editedAt as Date).toISOString() : null,

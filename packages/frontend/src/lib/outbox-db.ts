@@ -31,7 +31,7 @@ export interface OutboxEntry {
   isRotationQueued: boolean;
 
   // ── Display Content ───────────────────────────────────────────────
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   displayBody: string;
 
   // ── Sender Identity ───────────────────────────────────────────────

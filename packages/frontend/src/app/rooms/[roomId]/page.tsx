@@ -17,6 +17,7 @@ import {
   type TypingEventPayload,
   type TypingExpiredPayload,
   type TypingSnapshotPayload,
+  type ReplyToPayload,
   USE_GLOBAL_SOCKET,
   setGlobalActiveRoomId,
   syncRoomCache,
@@ -61,6 +62,7 @@ import {
   MAX_CACHED_ROOMS,
 } from "@/lib/message-cache";
 import { ChatInput } from "@/components/chat/chat-input";
+import { AudioRecorder } from "@/components/chat/audio-recorder";
 import { GifPicker, type GifSelection } from "@/components/chat/gif-picker";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import { MessageList, type UiMessage } from "@/components/chat/message-list";
@@ -79,7 +81,7 @@ import {
 import { useKeyHealth } from "@/components/key-recovery/provider";
 import { useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import type { GifMetadata, ImageMetadata, VideoMetadata, ReplyToInfo } from "@/lib/models";
+import type { GifMetadata, ImageMetadata, VideoMetadata, AudioMetadata, ReplyToInfo } from "@/lib/models";
 import { encryptMessagePreview } from "@/lib/quoted-message";
 import Link from "next/link";
 import {
@@ -256,6 +258,20 @@ async function decryptBatch(
           messageType: record.messageType,
           mediaMetadata,
         });
+      } else if (record.messageType === "audio") {
+        let mediaMetadata: AudioMetadata;
+        try {
+          mediaMetadata = JSON.parse(body) as AudioMetadata;
+        } catch {
+          results.push({ ...base, body: "🎤 Audio", messageType: "audio" });
+          continue;
+        }
+        results.push({
+          ...base,
+          body: "🎤 Voice Message",
+          messageType: "audio",
+          mediaMetadata,
+        });
       } else if (record.messageType === "gif") {
         let gifMetadata: GifMetadata;
         try {
@@ -307,6 +323,7 @@ export default function RoomChatPage() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [mediaSending, setMediaSending] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [cacheServed, setCacheServed] = useState(false);
@@ -369,7 +386,7 @@ export default function RoomChatPage() {
     messageId: string;
     senderId: string;
     senderName: string;
-    messageType: "text" | "image" | "video" | "gif";
+    messageType: "text" | "image" | "video" | "gif" | "audio";
     preview: string;
   } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -619,7 +636,24 @@ export default function RoomChatPage() {
   // ── Handle click on a quoted message ──
   const handleQuoteClick = useCallback(
     async (messageId: string) => {
-      if (!roomId || quoteLoading) return;
+      if (!roomId) return;
+
+      // ── Fast path: message is already in local state ──
+      const localIdx = messages.findIndex((m) => m.id === messageId);
+      if (localIdx !== -1) {
+        // Clear any previous highlight
+        if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+        setJumpTargetId(messageId);
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`msg-${messageId}`);
+          if (el) el.scrollIntoView({ block: "center" });
+        });
+        highlightTimeoutRef.current = setTimeout(() => setJumpTargetId(null), 3000);
+        return;
+      }
+
+      // ── Slow path: fetch from API ──
+      if (quoteLoading) return;
       setQuoteLoading(true);
       try {
         const response = await fetchMessagesAround(roomId, messageId, 25);
@@ -669,7 +703,7 @@ export default function RoomChatPage() {
         toast.error("The quoted message could not be loaded.");
       }
     },
-    [roomId, currentUserId, quoteLoading]
+    [roomId, currentUserId, quoteLoading, messages]
   );
 
   // ── Scroll to bottom (down-arrow click) ──
@@ -2309,6 +2343,152 @@ export default function RoomChatPage() {
     }
   }
 
+  /**
+   * Send a voice message: encrypt in chunks → upload to R2 → send message over socket.
+   * Follows the same pattern as pipelineOne for consistency.
+   */
+  async function pipelineAudio(blob: Blob, duration: number) {
+    if (!roomId) return;
+
+    const clientMessageId = crypto.randomUUID();
+    const mimeType = blob.type || "audio/webm";
+
+    // ── Capture reply context BEFORE any state mutations ──
+    const capturedReply = replyContext;
+
+    // ── Build local blob URL for optimistic playback ──
+    const localUrl = URL.createObjectURL(blob);
+
+    // ── Optimistic message: inline UiMessage (media pipelines don't use OutboxEntry) ──
+    const optimisticMsg: UiMessage = {
+      id: `optimistic:${clientMessageId}`,
+      clientMessageId,
+      senderId: currentUserId,
+      body: "🎤 Voice Message",
+      createdAt: new Date().toISOString(),
+      isOwn: true,
+      senderName: null,
+      senderUserIndex: null,
+      senderPfp: session?.user?.image ?? null,
+      messageType: "audio",
+      mediaMetadata: {
+        type: "audio",
+        objectKey: "",
+        mimeType,
+        size: blob.size,
+        duration,
+        iv: "",
+        localUrl,
+      },
+      replyTo: capturedReply
+        ? {
+            messageId: capturedReply.messageId,
+            senderId: capturedReply.senderId,
+            senderName: capturedReply.senderName,
+            senderUserIndex: null,
+            messageType: capturedReply.messageType,
+            previewIv: null,
+            previewCiphertext: null,
+            previewAuthTag: null,
+          }
+        : null,
+      status: "pending",
+      progress: 5,
+      progressStage: "compressing",
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setIsAtBottom(true);
+    setNewMessagesCount(0);
+    setNewerCursor(null);
+    setHasNewer(false);
+    setReplyContext(null);
+    requestAnimationFrame(() => scrollToBottom("smooth"));
+
+    const updateProgress = (
+      progress: number,
+      stage: "compressing" | "uploading" | "failed"
+    ) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientMessageId === clientMessageId
+            ? { ...m, progress, progressStage: stage, status: stage === "failed" ? "failed" : "pending" }
+            : m
+        )
+      );
+    };
+
+    try {
+      const roomKey = await getRoomKeyVersion(roomId, roomKeyRotation.currentKeyVersion);
+      if (!roomKey) throw new Error("Room key not available");
+
+      const buffer = await blob.arrayBuffer();
+      updateProgress(20, "compressing");
+
+      // Encrypt as a single block — audio files are small and single-encrypt avoids
+      // chunked-decryption complexity that can cause audio distortion.
+      const encrypted = await encryptMedia(buffer, roomKey);
+      updateProgress(50, "uploading");
+
+      const upload = await requestUploadUrl(roomId, mimeType, encrypted.encrypted.byteLength);
+      await uploadEncryptedBlob(upload.uploadUrl, new Blob([encrypted.encrypted]));
+      updateProgress(90, "uploading");
+
+      const audioMeta: AudioMetadata = {
+        type: "audio",
+        objectKey: upload.objectKey,
+        mimeType,
+        size: buffer.byteLength,
+        duration,
+        iv: encrypted.iv,
+        // No chunkSize / chunkIvMap — single-block encryption
+      };
+
+      // Build reply payload from captured (pre-clear) reply context
+      let replyTo: ReplyToPayload | undefined;
+      if (capturedReply) {
+        const preview = await encryptMessagePreview(null, capturedReply.messageType, roomKey);
+        replyTo = {
+          messageId: capturedReply.messageId,
+          senderId: capturedReply.senderId,
+          senderName: capturedReply.senderName,
+          senderUserIndex: null,
+          messageType: capturedReply.messageType,
+          previewIv: preview.previewIv,
+          previewCiphertext: preview.previewCiphertext,
+          previewAuthTag: preview.previewAuthTag,
+        };
+      }
+
+      const encryptedMessage = await encryptMessage(JSON.stringify(audioMeta), roomKey);
+      const response = await sendEncryptedMessage({
+        roomId,
+        clientMessageId,
+        ...encryptedMessage,
+        roomKeyVersion: roomKeyRotation.currentKeyVersion,
+        messageType: "audio",
+        replyTo,
+      });
+
+      if (response.message) {
+        reconcileOptimisticMessage(
+          clientMessageId,
+          response.message,
+          "🎤 Voice Message",
+          currentUserId,
+          setMessages
+        );
+      } else {
+        throw new Error(response.error || "Failed to send message over socket");
+      }
+    } catch (err) {
+      console.error("[pipelineAudio] Error:", err);
+      updateProgress(0, "failed");
+      // Revoke the local blob URL to free memory on failure
+      URL.revokeObjectURL(localUrl);
+    }
+  }
+
   /** Canvas-based video thumbnail from a compressed blob (lighter than ffmpeg re-run). */
   async function generateCanvasThumbnail(videoBlob: Blob): Promise<{ blob: Blob; width: number; height: number }> {
     const url = URL.createObjectURL(videoBlob);
@@ -2758,37 +2938,52 @@ export default function RoomChatPage() {
                   )}
                 </div>
 
-                <ChatInput
-                  draft={editingMessageId ? editingDraft : draft}
-                  onChange={(v) => {
-                    if (editingMessageId) {
-                      setEditingDraft(v);
-                    } else {
-                      void onDraftChange(v);
-                    }
-                  }}
-                  onSend={() => {
-                    if (editingMessageId) {
-                      void handleSaveEdit();
-                    } else {
-                      void onSend();
-                    }
-                  }}
-                  onSendMedia={(file) => handleFileSelected(file)}
-                  onGifClick={() => setGifPickerOpen(true)}
-                  disabled={roomDisabled}
-                  sendDisabled={isBootstrapping || !canChat}
-                  mediaSending={mediaSending}
-                  replyContext={replyContext}
-                  onClearReply={() => setReplyContext(null)}
-                  editingMessageId={editingMessageId}
-                  onSaveEdit={() => void handleSaveEdit()}
-                  onCancelEdit={() => {
-                    setEditingMessageId(null);
-                    setEditingDraft("");
-                    setDraft("");
-                  }}
-                />
+                {isRecording ? (
+                  <div className="shrink-0 bg-[#0d0d0d] border-t border-neutral-800/50 px-3 py-3 sm:px-4" style={{ paddingBottom: `max(0.75rem, env(safe-area-inset-bottom, 0px))` }}>
+                    <div className="mx-auto max-w-3xl">
+                      <AudioRecorder
+                        onRecordingComplete={(blob, dur) => {
+                          setIsRecording(false);
+                          void pipelineAudio(blob, dur);
+                        }}
+                        onCancel={() => setIsRecording(false)}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <ChatInput
+                    draft={editingMessageId ? editingDraft : draft}
+                    onChange={(v) => {
+                      if (editingMessageId) {
+                        setEditingDraft(v);
+                      } else {
+                        void onDraftChange(v);
+                      }
+                    }}
+                    onSend={() => {
+                      if (editingMessageId) {
+                        void handleSaveEdit();
+                      } else {
+                        void onSend();
+                      }
+                    }}
+                    onSendMedia={(file) => handleFileSelected(file)}
+                    onGifClick={() => setGifPickerOpen(true)}
+                    onMicClick={() => setIsRecording(true)}
+                    disabled={roomDisabled}
+                    sendDisabled={isBootstrapping || !canChat}
+                    mediaSending={mediaSending}
+                    replyContext={replyContext}
+                    onClearReply={() => setReplyContext(null)}
+                    editingMessageId={editingMessageId}
+                    onSaveEdit={() => void handleSaveEdit()}
+                    onCancelEdit={() => {
+                      setEditingMessageId(null);
+                      setEditingDraft("");
+                      setDraft("");
+                    }}
+                  />
+                )}
               </div>
             )}
           </>

@@ -541,7 +541,7 @@ io.on("connection", async (socket: AuthedSocket) => {
         ciphertext?: string;
         iv?: string;
         authTag?: string;
-        messageType?: "text" | "image" | "video" | "gif";
+        messageType?: "text" | "image" | "video" | "gif" | "audio";
         roomKeyVersion?: number;
       },
       ack
@@ -580,7 +580,7 @@ io.on("connection", async (socket: AuthedSocket) => {
         return;
       }
 
-      if (!["text", "image", "video", "gif"].includes(messageType)) {
+      if (!["text", "image", "video", "gif", "audio"].includes(messageType)) {
         ack?.({ ok: false, error: "Invalid messageType" });
         return;
       }
@@ -597,7 +597,7 @@ io.on("connection", async (socket: AuthedSocket) => {
           typeof replyToPayload.messageId !== "string" ||
           typeof replyToPayload.senderId !== "string" ||
           typeof replyToPayload.senderName !== "string" ||
-          !["text", "image", "video", "gif"].includes(replyToPayload.messageType)
+          !["text", "image", "video", "gif", "audio"].includes(replyToPayload.messageType)
         ) {
           ack?.({ ok: false, error: "Invalid replyTo payload" });
           return;

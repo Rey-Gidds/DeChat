@@ -18,7 +18,7 @@ export interface ReplyToPayload {
   senderId: string;
   senderName: string;
   senderUserIndex: number | null;
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   previewIv: string | null;
   previewCiphertext: string | null;
   previewAuthTag: string | null;
@@ -31,7 +31,7 @@ export interface OutboundEncryptedMessage {
   iv: string;
   authTag: string;
   roomKeyVersion?: number;
-  messageType?: "text" | "image" | "video" | "gif";
+  messageType?: "text" | "image" | "video" | "gif" | "audio";
   replyTo?: ReplyToPayload;
 }
 
@@ -43,7 +43,7 @@ export interface RealtimeRoomMessage {
   iv: string;
   authTag: string;
   roomKeyVersion?: number;
-  messageType?: "text" | "image" | "video" | "gif";
+  messageType?: "text" | "image" | "video" | "gif" | "audio";
   replyTo?: ReplyToPayload | null;
   editedAt?: string | null;
   editCount?: number;

@@ -141,7 +141,20 @@ export interface VideoMetadata {
   localUrl?: string;
 }
 
-export type MediaMetadata = ImageMetadata | VideoMetadata;
+export interface AudioMetadata {
+  type: "audio";
+  objectKey: string;
+  mimeType: string;
+  size: number;
+  duration?: number;
+  iv: string;
+  chunkSize?: number;
+  chunkIvMap?: string[];
+  caption?: string;
+  localUrl?: string;
+}
+
+export type MediaMetadata = ImageMetadata | VideoMetadata | AudioMetadata;
 
 export interface GifMetadata {
   type: "gif";
@@ -160,7 +173,7 @@ export interface ReplyToInfo {
   senderId: string;
   senderName: string;
   senderUserIndex: number | null;
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   previewIv: string | null;
   previewCiphertext: string | null;
   previewAuthTag: string | null;
@@ -175,7 +188,7 @@ export interface RoomMessage {
   ciphertext: string;
   iv: string;
   authTag: string;
-  messageType: "text" | "image" | "video" | "gif";
+  messageType: "text" | "image" | "video" | "gif" | "audio";
   roomKeyVersion?: number;
   replyTo?: ReplyToInfo | null;
   editedAt?: Date | null;

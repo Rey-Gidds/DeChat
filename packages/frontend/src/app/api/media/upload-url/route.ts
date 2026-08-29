@@ -13,6 +13,7 @@ import { db } from "@/lib/auth";
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;  // 10 MB
 const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100 MB
+const MAX_AUDIO_SIZE = 15 * 1024 * 1024;  // 15 MB
 
 const UploadUrlRequestSchema = z.object({
   mimeType: z.string().min(1),
@@ -90,9 +91,10 @@ export async function POST(req: Request) {
   // Size limits based on MIME type
   const isImage = mimeType.startsWith("image/");
   const isVideo = mimeType.startsWith("video/");
-  if (!isImage && !isVideo) {
+  const isAudio = mimeType.startsWith("audio/");
+  if (!isImage && !isVideo && !isAudio) {
     return NextResponse.json(
-      { error: "Unsupported media type. Only images and videos are allowed." },
+      { error: "Unsupported media type. Only images, videos, and audio are allowed." },
       { status: 400 }
     );
   }
@@ -106,6 +108,12 @@ export async function POST(req: Request) {
   if (isVideo && size > MAX_VIDEO_SIZE) {
     return NextResponse.json(
       { error: "Video size exceeds 100 MB limit" },
+      { status: 413 }
+    );
+  }
+  if (isAudio && size > MAX_AUDIO_SIZE) {
+    return NextResponse.json(
+      { error: "Audio size exceeds 15 MB limit" },
       { status: 413 }
     );
   }

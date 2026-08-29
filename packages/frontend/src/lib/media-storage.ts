@@ -91,7 +91,9 @@ export async function fetchAndDecryptMedia(
   objectKey: string,
   roomKey: CryptoKey,
   ivBase64: string,
-  expectedMimeType: string
+  expectedMimeType: string,
+  chunkIvMap?: string[],
+  chunkSize?: number
 ): Promise<DecryptedMediaResult> {
   const cdnBase = getCdnBaseUrl();
   if (!cdnBase) {
@@ -106,7 +108,42 @@ export async function fetchAndDecryptMedia(
   }
 
   const encrypted = await response.arrayBuffer();
-  const decrypted = await decryptMedia(encrypted, roomKey, ivBase64);
+
+  let decrypted: ArrayBuffer;
+  if (chunkIvMap && chunkIvMap.length > 0 && chunkSize) {
+    // File is chunk-encrypted: decrypt block by block in memory
+    const encryptedChunkSize = chunkSize + 16;
+    const decryptedChunks: ArrayBuffer[] = [];
+    let offset = 0;
+    let chunkIdx = 0;
+
+    while (offset < encrypted.byteLength) {
+      const end = Math.min(offset + encryptedChunkSize, encrypted.byteLength);
+      const encryptedChunk = encrypted.slice(offset, end);
+      const ivStr = chunkIvMap[chunkIdx];
+      if (!ivStr) {
+        throw new Error(`Missing IV for chunk index ${chunkIdx} in full-download decryption`);
+      }
+      const iv = Uint8Array.from(atob(ivStr), (c) => c.charCodeAt(0));
+      const decryptedChunk = await decryptChunk(encryptedChunk, roomKey, iv);
+      decryptedChunks.push(decryptedChunk);
+      offset += encryptedChunkSize;
+      chunkIdx++;
+    }
+
+    // Combine decrypted chunks
+    const totalLength = decryptedChunks.reduce((acc, c) => acc + c.byteLength, 0);
+    const joined = new Uint8Array(totalLength);
+    let joinedOffset = 0;
+    for (const chunk of decryptedChunks) {
+      joined.set(new Uint8Array(chunk), joinedOffset);
+      joinedOffset += chunk.byteLength;
+    }
+    decrypted = joined.buffer;
+  } else {
+    // Legacy single-encrypted file
+    decrypted = await decryptMedia(encrypted, roomKey, ivBase64);
+  }
 
   // Determine MIME type from decrypted data or fall back to expected
   const blob = new Blob([decrypted], { type: expectedMimeType });
@@ -192,7 +229,9 @@ export async function loadMedia(
   objectKey: string,
   roomKey: CryptoKey,
   ivBase64: string,
-  mimeType: string
+  mimeType: string,
+  chunkIvMap?: string[],
+  chunkSize?: number
 ): Promise<DecryptedMediaResult> {
   // 1. Check in-memory cache
   const cached = globalCache.get(objectKey);
@@ -203,7 +242,7 @@ export async function loadMedia(
   if (inflight) return inflight;
 
   // 3. Fetch and decrypt
-  const promise = fetchAndDecryptMedia(objectKey, roomKey, ivBase64, mimeType)
+  const promise = fetchAndDecryptMedia(objectKey, roomKey, ivBase64, mimeType, chunkIvMap, chunkSize)
     .then((result) => {
       // Store in cache
       globalCache.set(objectKey, result);
@@ -556,6 +595,207 @@ function useProgressiveVideo(
   return { blobUrl, loading, error, retry };
 }
 
+interface ProgressiveAudioState {
+  blobUrl: string | null;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+/**
+ * Internal hook that drives progressive audio playback via MediaSource Extensions.
+ */
+function useProgressiveAudio(
+  objectKey: string,
+  roomKey: CryptoKey,
+  chunkIvMap: string[],
+  chunkSize: number,
+  mimeType: string
+): ProgressiveAudioState {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const retryCountRef = useRef(0);
+  const mountedRef = useRef(true);
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const abortRef = useRef(false);
+
+  const startPlayback = useCallback(() => {
+    if (!objectKey || !roomKey || !chunkIvMap || !chunkSize) return;
+
+    setLoading(true);
+    setError(null);
+    abortRef.current = false;
+
+    const cdnBase = getCdnBaseUrl();
+    if (!cdnBase) return;
+
+    const ms = new MediaSource();
+    mediaSourceRef.current = ms;
+    const url = URL.createObjectURL(ms);
+    setBlobUrl(url);
+
+    let totalEncryptedSize = 0;
+    let currentChunkIndex = 0;
+    let chunksAppended = 0;
+    let totalChunks = 0;
+
+    ms.addEventListener("sourceopen", () => {
+      if (abortRef.current) return;
+
+      try {
+        const sb = ms.addSourceBuffer(mimeType);
+        sourceBufferRef.current = sb;
+
+        // Step 1: Probe total encrypted size
+        probeEncryptedSize(objectKey)
+          .then((size) => {
+            if (abortRef.current) return;
+            totalEncryptedSize = size;
+
+            // Each encrypted chunk = chunkSize + 16 (GCM tag)
+            const encryptedChunkSize = chunkSize + 16;
+            totalChunks = Math.ceil(size / encryptedChunkSize);
+
+            // Step 2: Start fetching chunks
+            fetchNextChunks();
+          })
+          .catch((err) => {
+            if (!abortRef.current) {
+              setError(err instanceof Error ? err.message : "Failed to probe audio size");
+              setLoading(false);
+            }
+          });
+
+        async function fetchNextChunks() {
+          if (abortRef.current) return;
+
+          while (currentChunkIndex < totalChunks) {
+            if (abortRef.current) return;
+
+            // Calculate ciphertext range for this batch of chunks
+            const encryptedChunkSize = chunkSize + 16;
+            const rangeStart = currentChunkIndex * encryptedChunkSize;
+            const rangeEnd = Math.min(
+              (currentChunkIndex + 1) * encryptedChunkSize,
+              totalEncryptedSize
+            );
+
+            try {
+              const encryptedChunk = await fetchMediaRange(
+                objectKey,
+                rangeStart,
+                rangeEnd
+              );
+
+              if (abortRef.current) return;
+
+              // Read the chunk-specific IV from chunkIvMap
+              const ivBase64 = chunkIvMap[currentChunkIndex];
+              if (!ivBase64) {
+                throw new Error(`Missing IV for chunk ${currentChunkIndex}`);
+              }
+              const iv = Uint8Array.from(atob(ivBase64), (c) => c.charCodeAt(0));
+
+              // Decrypt the chunk
+              const decryptedChunk = await decryptChunk(
+                encryptedChunk,
+                roomKey,
+                iv
+              );
+
+              if (abortRef.current) return;
+
+              // Wait for sourceBuffer to be ready
+              if (sb.updating) {
+                await new Promise<void>((resolve, reject) => {
+                  const timeout = setTimeout(() => {
+                    reject(new Error("SourceBuffer updateend timeout"));
+                  }, MSE_APPEND_TIMEOUT);
+                  sb.addEventListener(
+                    "updateend",
+                    () => {
+                      clearTimeout(timeout);
+                      resolve();
+                    },
+                    { once: true }
+                  );
+                });
+              }
+
+              if (abortRef.current) return;
+
+              // Append decrypted chunk to SourceBuffer
+              sb.appendBuffer(decryptedChunk);
+              currentChunkIndex++;
+              chunksAppended++;
+
+              // Update loading state after first chunk
+              if (chunksAppended === 1) {
+                setLoading(false);
+              }
+            } catch (err) {
+              if (!abortRef.current) {
+                setError(
+                  err instanceof Error ? err.message : "Failed to stream audio chunk"
+                );
+                setLoading(false);
+                return;
+              }
+            }
+          }
+
+          // All chunks fetched and appended
+          if (ms.readyState === "open") {
+            try {
+              ms.endOfStream();
+            } catch {
+              // Ignore
+            }
+          }
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!abortRef.current) {
+          setError(err instanceof Error ? err.message : "MediaSource not supported or failed to initialize");
+          setLoading(false);
+        }
+      }
+    });
+  }, [objectKey, roomKey, chunkIvMap, chunkSize, mimeType]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    startPlayback();
+
+    return () => {
+      mountedRef.current = false;
+      abortRef.current = true;
+
+      // Clean up MSE
+      if (mediaSourceRef.current?.readyState === "open") {
+        try {
+          mediaSourceRef.current.endOfStream();
+        } catch {
+          // ignore
+        }
+      }
+      sourceBufferRef.current = null;
+      mediaSourceRef.current = null;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [objectKey, roomKey, chunkIvMap, chunkSize, mimeType]);
+
+  const retry = useCallback(() => {
+    retryCountRef.current += 1;
+    startPlayback();
+  }, [startPlayback]);
+
+  return { blobUrl, loading, error, retry };
+}
+
 // ─── useMediaLoader Hook ──────────────────────────────────────────
 
 interface UseMediaLoaderResult {
@@ -571,16 +811,13 @@ export interface ProgressiveVideoParams {
   chunkSize: number;
 }
 
+export interface ProgressiveAudioParams {
+  chunkIvMap: string[];
+  chunkSize: number;
+}
+
 /**
  * React hook that loads and caches encrypted media from CDN.
- *
- * For images (and videos without progressive params):
- *   - Checks in-memory cache first, deduplicates in-flight requests,
- *     fetches from CDN, decrypts with room key, returns a blob URL.
- *
- * For videos with progressive params (ivBase + chunkSize):
- *   - Uses MediaSource Extensions + HTTP Range requests to stream
- *     and decrypt chunks progressively.
  */
 export function useMediaLoader(
   objectKey: string | undefined,
@@ -589,7 +826,8 @@ export function useMediaLoader(
   mimeType: string | undefined,
   thumbnailObjectKey?: string,
   thumbnailIv?: string,
-  progressiveParams?: ProgressiveVideoParams
+  progressiveParams?: ProgressiveVideoParams,
+  progressiveAudioParams?: ProgressiveAudioParams
 ): UseMediaLoaderResult {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [thumbnailBlobUrl, setThumbnailBlobUrl] = useState<string | null>(null);
@@ -597,6 +835,9 @@ export function useMediaLoader(
   const [error, setError] = useState<string | null>(null);
   const retryCountRef = useRef(0);
   const mountedRef = useRef(true);
+  // Always keep a fresh ref to progressiveAudioParams to avoid stale closures
+  const progressiveAudioParamsRef = useRef(progressiveAudioParams);
+  useEffect(() => { progressiveAudioParamsRef.current = progressiveAudioParams; });
 
   // Determine whether to use progressive streaming for this video
   const isProgressiveVideo =
@@ -606,13 +847,24 @@ export function useMediaLoader(
     typeof MediaSource !== "undefined" &&
     MediaSource.isTypeSupported(mimeType);
 
+  // Audio always uses full-download + chunked decrypt (MSE is unreliable for audio playback).
+  const isProgressiveAudio = false;
+
   // Always call useProgressiveVideo (hooks rules: unconditional).
-  // When not a progressive video, pass empty/invalid args and ignore the result.
-  const progressiveResult = useProgressiveVideo(
+  const progressiveVideoResult = useProgressiveVideo(
     isProgressiveVideo ? objectKey! : "",
     isProgressiveVideo ? roomKey! : null as unknown as CryptoKey,
     progressiveParams?.ivBase ?? "",
     progressiveParams?.chunkSize ?? 0,
+    mimeType ?? ""
+  );
+
+  // Always call useProgressiveAudio (hooks rules: unconditional).
+  const progressiveAudioResult = useProgressiveAudio(
+    isProgressiveAudio ? objectKey! : "",
+    isProgressiveAudio ? roomKey! : null as unknown as CryptoKey,
+    progressiveAudioParams?.chunkIvMap ?? [],
+    progressiveAudioParams?.chunkSize ?? 0,
     mimeType ?? ""
   );
 
@@ -637,15 +889,31 @@ export function useMediaLoader(
     };
   }, [thumbnailObjectKey, thumbnailIv, roomKey]);
 
-  // ── Full-download path (for images and non-progressive videos) ──
+  // ── Full-download path (for images and non-progressive videos/audios) ──
   const fullLoad = useCallback(() => {
-    if (!objectKey || !roomKey || !ivBase64 || !mimeType) return;
-    if (isProgressiveVideo) return; // Don't full-download when progressive is active
+    if (!objectKey || !roomKey || !mimeType) return;
+
+    // Read latest audio params from ref (avoids stale closure)
+    const audioParams = progressiveAudioParamsRef.current;
+    const effectiveIv = ivBase64 || audioParams?.chunkIvMap?.[0] || "";
+    if (!effectiveIv && (!audioParams?.chunkIvMap || audioParams.chunkIvMap.length === 0)) {
+      // No IV and no chunk map — nothing to decrypt
+      if (!ivBase64) return;
+    }
+
+    if (isProgressiveVideo) return; // Don't full-download when progressive video is active
 
     setLoading(true);
     setError(null);
 
-    loadMedia(objectKey, roomKey, ivBase64, mimeType)
+    loadMedia(
+      objectKey,
+      roomKey,
+      effectiveIv,
+      mimeType,
+      audioParams?.chunkIvMap,
+      audioParams?.chunkSize
+    )
       .then((result) => {
         if (!mountedRef.current) return;
         const url = URL.createObjectURL(result.blob);
@@ -664,8 +932,8 @@ export function useMediaLoader(
     fullLoad();
   }, [fullLoad]);
 
-  // ── Progressive mode: use progressiveResult, ignore fullLoad ──
-  // ── Non-progressive mode: ignore progressiveResult, use fullLoad ──
+  // ── Progressive mode: use progressive results, ignore fullLoad ──
+  // ── Non-progressive mode: ignore progressive results, use fullLoad ──
   useEffect(() => {
     mountedRef.current = true;
 
@@ -684,11 +952,21 @@ export function useMediaLoader(
   // Derive final return value based on mode
   if (isProgressiveVideo) {
     return {
-      blobUrl: progressiveResult.blobUrl,
+      blobUrl: progressiveVideoResult.blobUrl,
       thumbnailBlobUrl,
-      loading: progressiveResult.loading,
-      error: progressiveResult.error,
-      retry: progressiveResult.retry,
+      loading: progressiveVideoResult.loading,
+      error: progressiveVideoResult.error,
+      retry: progressiveVideoResult.retry,
+    };
+  }
+
+  if (isProgressiveAudio) {
+    return {
+      blobUrl: progressiveAudioResult.blobUrl,
+      thumbnailBlobUrl,
+      loading: progressiveAudioResult.loading,
+      error: progressiveAudioResult.error,
+      retry: progressiveAudioResult.retry,
     };
   }
 

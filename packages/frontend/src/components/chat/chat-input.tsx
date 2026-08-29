@@ -1,6 +1,6 @@
 "use client";
 
-import { ImageIcon, VideoIcon, Plus, ArrowUp, Film, X, Check } from "lucide-react";
+import { ImageIcon, VideoIcon, Plus, ArrowUp, Film, X, Check, Mic } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 const MAX_TEXTAREA_HEIGHT = 130; // ~5-6 lines
@@ -17,6 +17,7 @@ interface ChatInputProps {
   onSend: () => void;
   onSendMedia?: (file: File) => void;
   onGifClick?: () => void;
+  onMicClick?: () => void;
   disabled?: boolean;
   sendDisabled?: boolean;
   mediaSending?: boolean;
@@ -33,6 +34,7 @@ export function ChatInput({
   onSend,
   onSendMedia,
   onGifClick,
+  onMicClick,
   disabled,
   sendDisabled,
   mediaSending,
@@ -221,13 +223,13 @@ export function ChatInput({
           ) : (
             <button
               type="button"
-              onClick={onSend}
-              disabled={disabled || sendDisabled || mediaSending || !draft.trim()}
+              onClick={draft.trim() ? onSend : onMicClick}
+              disabled={disabled || (draft.trim() ? sendDisabled : false) || mediaSending}
               style={{ alignSelf: "flex-end" }}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-30"
-              aria-label="Send message"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-30 animate-in fade-in zoom-in-50 duration-150"
+              aria-label={draft.trim() ? "Send message" : "Record voice message"}
             >
-              <ArrowUp size={18} />
+              {draft.trim() ? <ArrowUp size={18} /> : <Mic size={18} />}
             </button>
           )}
         </div>

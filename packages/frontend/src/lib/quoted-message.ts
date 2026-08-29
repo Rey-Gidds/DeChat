@@ -7,7 +7,7 @@ import type { ReplyToInfo } from "./models";
  */
 export async function encryptMessagePreview(
   text: string | null,
-  messageType: "text" | "image" | "video" | "gif",
+  messageType: "text" | "image" | "video" | "gif" | "audio",
   roomKey: CryptoKey
 ): Promise<{
   previewIv: string | null;
@@ -42,6 +42,7 @@ export async function decryptReplyPreview(
       image: "📷 Image",
       video: "🎬 Video",
       gif: "📹 GIF",
+      audio: "🎤 Audio",
     };
     return label[replyTo.messageType] ?? "📎 Media";
   }
