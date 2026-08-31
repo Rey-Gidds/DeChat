@@ -28,10 +28,6 @@ try {
   console.warn("[SW] Firebase init warning:", err);
 }
 
-navigator.serviceWorker.ready.then((registration) => {
-  return registration.sync.register("dechat-unread-sync");
-})
-
 // ── IDB helper (same DB as the app) ──────────────────────────────────────────
 const DB_NAME = "dechat-crypto-store";
 const DB_VERSION = 8;
