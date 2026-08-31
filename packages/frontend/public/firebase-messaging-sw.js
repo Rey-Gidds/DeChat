@@ -7,6 +7,8 @@
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js");
 
+require('dotenv').config({ path: '../.env.local' })
+
 // ── Firebase init (dynamic query params with fallbacks for cold SW wake-up) ──
 const urlParams = new URLSearchParams(self.location.search);
 const firebaseConfig = {
