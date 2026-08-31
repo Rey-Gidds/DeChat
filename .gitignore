@@ -6,6 +6,7 @@ packages/*/.env
 packages/*/.env.*
 !packages/*/.env.example
 !packages/*/.env*.example
+packages/frontend/public/firebase-messaging-sw.js
 node_modules
 
 # Next.js build output

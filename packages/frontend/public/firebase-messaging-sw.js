@@ -10,12 +10,12 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // ── Firebase init (dynamic query params with fallbacks for cold SW wake-up) ──
 const urlParams = new URLSearchParams(self.location.search);
 const firebaseConfig = {
-  apiKey: urlParams.get("apiKey") || "AIzaSyDKSHIJkvRILXI56HKRojZyTn_vIJnE7Zc",
-  authDomain: urlParams.get("authDomain") || "dechat-3cd8a.firebaseapp.com",
-  projectId: urlParams.get("projectId") || "dechat-3cd8a",
-  storageBucket: urlParams.get("storageBucket") || "dechat-3cd8a.firebasestorage.app",
-  messagingSenderId: urlParams.get("messagingSenderId") || "90574538789",
-  appId: urlParams.get("appId") || "1:90574538789:web:e168540b3231acc1e797cc",
+  apiKey: urlParams.get("apiKey") || process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: urlParams.get("authDomain") || process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: urlParams.get("projectId") || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: urlParams.get("storageBucket") || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: urlParams.get("messagingSenderId") || process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: urlParams.get("appId") || process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
 let messaging = null;
@@ -27,6 +27,10 @@ try {
 } catch (err) {
   console.warn("[SW] Firebase init warning:", err);
 }
+
+navigator.serviceWorker.ready.then((registration) => {
+  return registration.sync.register("dechat-unread-sync");
+})
 
 // ── IDB helper (same DB as the app) ──────────────────────────────────────────
 const DB_NAME = "dechat-crypto-store";
@@ -99,7 +103,7 @@ async function showVersionedNotification(roomId, roomName, unreadCount, version)
       body,
       icon: "/icons/dechat_logo_192.png",
       badge: "/icons/dechat_logo_192.png",
-      tag: `room-${roomId}`,     // Collapses notifications per room (WhatsApp style)
+      tag: `room-${roomId}`,     // Collapses notifications per room
       renotify: true,            // Re-alerts even if same tag exists
       data: {
         url: `/rooms/${roomId}`,

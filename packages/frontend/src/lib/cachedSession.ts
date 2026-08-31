@@ -1,23 +1,29 @@
 import { auth, ensureMongoConnected } from "./auth";
+import { Redis } from "@upstash/redis";
 
 export type Session = Awaited<ReturnType<typeof auth.api.getSession>>;
 
-type CacheEntry = {
+type RedisCacheEntry = {
   session: NonNullable<Session>;
-  responseHeaders?: Headers;
-  timestamp: number;
-  expiresAt: number;
+  serializedHeaders?: [string, string][];
 };
 
-const sessionCache = new Map<string, CacheEntry>();
-const MAX_CACHE_ENTRIES = 200;
+const redis =
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ? new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      })
+    : null;
+
+if (!redis) {
+  console.warn("[cachedSession] Warning: Redis is not configured. Session caching is disabled.");
+}
+
 const inFlightSessions = new Map<string, Promise<CachedSessionResult>>();
 
-function getDefaultTtlMs(): number {
-  const env = process.env.SESSION_CACHE_TTL_MS;
-  if (!env) return 60_000;
-  const parsed = parseInt(env, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 60_000;
+function getRedisKey(cacheKey: string): string {
+  return `session:${cacheKey}`;
 }
 
 function extractSessionCacheKey(cookieHeader: string | null): string | null {
@@ -50,25 +56,16 @@ function parseSessionExpiresAt(session: NonNullable<Session>): number {
   return Number.isFinite(expiresAt) ? expiresAt : 0;
 }
 
-function isFresh(entry: CacheEntry, now: number): boolean {
-  if (now >= entry.expiresAt) return false;
-  return now - entry.timestamp < getDefaultTtlMs();
-}
-
-function evictStaleEntries(now: number): void {
-  if (sessionCache.size <= MAX_CACHE_ENTRIES) return;
-
-  for (const [key, entry] of sessionCache.entries()) {
-    if (now - entry.timestamp >= getDefaultTtlMs() || now >= entry.expiresAt) {
-      sessionCache.delete(key);
-    }
-  }
-}
-
-export function evictSession(headers: Headers) {
+export async function evictSession(headers: Headers) {
   const cacheKey = extractSessionCacheKey(headers.get("cookie"));
   if (!cacheKey) return;
-  sessionCache.delete(cacheKey);
+  if (redis) {
+    try {
+      await redis.del(getRedisKey(cacheKey));
+    } catch (err) {
+      console.error("[cachedSession] Error evicting session from Redis:", err);
+    }
+  }
 }
 
 export type GetCachedSessionOptions = {
@@ -93,18 +90,35 @@ export async function getCachedSession(
   const cacheKey = extractSessionCacheKey(cookieHeader) ?? cookieHeader;
   if (!cacheKey) return { session: null };
 
-  const now = Date.now();
-
   if (!options.forceRefresh) {
-    const cached = sessionCache.get(cacheKey);
-    if (cached && isFresh(cached, now)) {
-      return { session: cached.session, responseHeaders: cached.responseHeaders };
+    if (redis) {
+      try {
+        const cachedRaw = await redis.get<string | RedisCacheEntry>(getRedisKey(cacheKey));
+        if (cachedRaw) {
+          let entry: RedisCacheEntry;
+          if (typeof cachedRaw === "string") {
+            entry = JSON.parse(cachedRaw);
+          } else {
+            entry = cachedRaw;
+          }
+          const responseHeaders = entry.serializedHeaders
+            ? new Headers(entry.serializedHeaders)
+            : undefined;
+          return { session: entry.session, responseHeaders };
+        }
+      } catch (err) {
+        console.error("[cachedSession] Error fetching cached session from Redis:", err);
+      }
     }
   } else {
-    sessionCache.delete(cacheKey);
+    if (redis) {
+      try {
+        await redis.del(getRedisKey(cacheKey));
+      } catch (err) {
+        console.error("[cachedSession] Error clearing session from Redis on forceRefresh:", err);
+      }
+    }
   }
-
-  evictStaleEntries(now);
 
   // Request coalescing: if a DB fetch for this session is already in-flight,
   // await it instead of firing a duplicate getSession query.
@@ -133,18 +147,33 @@ async function fetchSessionFromDb(cacheKey: string, headers: Headers): Promise<C
     const responseHeaders = result?.headers;
 
     if (!session?.session || !session?.user) {
-      sessionCache.delete(cacheKey);
+      if (redis) {
+        try {
+          await redis.del(getRedisKey(cacheKey));
+        } catch (err) {
+          console.error("[cachedSession] Error evicting invalid session from Redis:", err);
+        }
+      }
       return { session: null, responseHeaders };
     }
 
     const expiresAt = parseSessionExpiresAt(session);
-    const timestamp = Date.now();
-    sessionCache.set(cacheKey, {
-      session,
-      responseHeaders,
-      timestamp,
-      expiresAt,
-    });
+    const now = Date.now();
+    const timeToSessionExpirySec = Math.floor((expiresAt - now) / 1000);
+    // Redis cache TTL of 5 minutes (300 seconds) capped by the session's actual expiry
+    const cacheTtlSec = Math.min(300, Math.max(0, timeToSessionExpirySec));
+
+    if (cacheTtlSec > 0 && redis) {
+      const entry: RedisCacheEntry = {
+        session,
+        serializedHeaders: responseHeaders ? Array.from(responseHeaders.entries()) : undefined,
+      };
+      try {
+        await redis.set(getRedisKey(cacheKey), JSON.stringify(entry), { ex: cacheTtlSec });
+      } catch (err) {
+        console.error("[cachedSession] Error saving session to Redis:", err);
+      }
+    }
 
     return { session, responseHeaders };
   } catch (err) {
@@ -177,10 +206,10 @@ function getSessionDataCookieAttributes(): Record<string, any> {
 /**
  * Clears the BetterAuth session data cookie (cookieCache) on the response
  * so the next request falls through to the DB for a fresh session.
- * Also evicts the in-memory session cache entry.
+ * Also evicts the session cache entry.
  */
 export function invalidateSessionDataCookie(response: any, headers: Headers): void {
-  evictSession(headers);
+  void evictSession(headers);
   const cookieName = getSessionDataCookieName();
   const attrs = getSessionDataCookieAttributes();
   response.cookies.set(cookieName, "", { ...attrs, maxAge: 0 });

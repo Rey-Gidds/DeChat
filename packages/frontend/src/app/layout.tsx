@@ -5,8 +5,8 @@ import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  title: "DeChat | Privacy-First Realtime Chat",
-  description: "Secure, pseudonymous, and fully end-to-end encrypted messaging rooms.",
+  title: "DeChat",
+  description: "Secure and fully end-to-end encrypted messaging rooms.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
