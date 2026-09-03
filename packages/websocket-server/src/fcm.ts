@@ -1,7 +1,5 @@
 import { initializeApp, cert } from "firebase-admin/app";
 import { getMessaging, MulticastMessage, SendResponse } from "firebase-admin/messaging";
-import path from "path";
-import fs from "fs";
 import { getDb } from "./db";
 import { ObjectId } from "mongodb";
 
@@ -11,18 +9,13 @@ function initFirebaseAdmin() {
   if (initialized) return;
 
   try {
-    const jsonPath = path.resolve(
-      __dirname,
-      "../../frontend/dechat-3cd8a-firebase-adminsdk-fbsvc-438578a1f7.json"
-    );
-
-    if (fs.existsSync(jsonPath)) {
-      const serviceAccount = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
       initializeApp({
         credential: cert(serviceAccount),
       });
       initialized = true;
-      console.log("[FCM] Firebase Admin SDK initialized via service account file.");
+      console.log("[FCM] Firebase Admin SDK initialized via FIREBASE_SERVICE_ACCOUNT_JSON env var.");
     } else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
       initializeApp({
         credential: cert({
@@ -32,7 +25,7 @@ function initFirebaseAdmin() {
         }),
       });
       initialized = true;
-      console.log("[FCM] Firebase Admin SDK initialized via env vars.");
+      console.log("[FCM] Firebase Admin SDK initialized via individual env vars.");
     } else {
       console.warn("[FCM] Firebase credentials not found. FCM push sending disabled.");
     }
