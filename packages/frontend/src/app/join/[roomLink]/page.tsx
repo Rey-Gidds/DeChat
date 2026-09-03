@@ -52,9 +52,9 @@ export default function JoinByLinkPage() {
       {error ? (
         <>
           <p className="text-sm text-neutral-400">{error}</p>
-          <Link href="/" className="mt-4">
+          <Link href="/discover" className="mt-4">
             <Button variant="secondary" className="uppercase tracking-wider">
-              Go home
+              Go to Discover
             </Button>
           </Link>
         </>

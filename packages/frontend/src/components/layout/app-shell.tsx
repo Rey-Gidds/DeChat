@@ -20,7 +20,7 @@ import { useEffect } from "react";
 const NAV_ITEMS = [
   { href: "/rooms/joined", label: "Joined", icon: List },
   { href: "/pending", label: "Requests", icon: Clock },
-  { href: "/", label: "Discover", icon: Compass },
+  { href: "/discover", label: "Discover", icon: Compass },
   { href: "/my-rooms", label: "My Rooms", icon: Grid3X3 },
 ];
 
@@ -38,8 +38,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
   const { user: userProfile } = useUser();
   const { state } = useKeyHealth();
+  const isLandingPage = pathname === "/";
   const isAuthPage = ["/sign-in", "/sign-up", "/verify-email", "/forgot-password", "/reset-password"].includes(pathname);
-  const isRoomPage = (pathname.startsWith("/rooms/") && !pathname.startsWith("/rooms/joined") && !pathname.startsWith("/my-rooms")) || isAuthPage;
+  const isRoomPage = (pathname.startsWith("/rooms/") && !pathname.startsWith("/rooms/joined") && !pathname.startsWith("/my-rooms")) || isAuthPage || isLandingPage;
 
   const showKeygen = session?.user && !isPending && !isAuthPage && state === "setup-required";
   const userName = userProfile?.name || session?.user?.name || session?.user?.email;
@@ -116,7 +117,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
             {/* Desktop Nav Links */}
             <nav className="hidden sm:flex items-center gap-0.5">
               {[
-                { href: "/", label: "Discover" },
+                { href: "/discover", label: "Discover" },
                 { href: "/rooms/joined", label: "Joined" },
                 { href: "/pending", label: "Requests" },
                 { href: "/my-rooms", label: "My Rooms" },
@@ -190,7 +191,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         </header>
       )}
 
-      <main className={`flex-1 min-h-0 ${isRoomPage ? "" : "overflow-y-auto pb-20 sm:pb-0"}`}>
+      <main className={`flex-1 min-h-0 ${isLandingPage ? "overflow-y-auto" : isRoomPage ? "" : "overflow-y-auto pb-20 sm:pb-0"}`}>
         <GlobalSocketProvider>{children}</GlobalSocketProvider>
       </main>
 
