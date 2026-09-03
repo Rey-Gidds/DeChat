@@ -10,12 +10,12 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-com
 // ── Firebase init (dynamic query params with fallbacks for cold SW wake-up) ──
 const urlParams = new URLSearchParams(self.location.search);
 const firebaseConfig = {
-  apiKey: urlParams.get("apiKey") || process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: urlParams.get("authDomain") || process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: urlParams.get("projectId") || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: urlParams.get("storageBucket") || process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: urlParams.get("messagingSenderId") || process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: urlParams.get("appId") || process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey: urlParams.get("apiKey") || "",
+  authDomain: urlParams.get("authDomain") || "",
+  projectId: urlParams.get("projectId") || "",
+  storageBucket: urlParams.get("storageBucket") || "",
+  messagingSenderId: urlParams.get("messagingSenderId") || "",
+  appId: urlParams.get("appId") || "",
 };
 
 let messaging = null;
