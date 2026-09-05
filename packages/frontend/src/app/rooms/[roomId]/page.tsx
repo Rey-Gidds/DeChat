@@ -81,7 +81,7 @@ import {
 import { useKeyHealth } from "@/components/key-recovery/provider";
 import { useSession } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
-import type { GifMetadata, ImageMetadata, VideoMetadata, AudioMetadata, ReplyToInfo } from "@/lib/models";
+import type { GifMetadata, ImageMetadata, VideoMetadata, AudioMetadata, ReplyToInfo, PfpMetadata } from "@/lib/models";
 import { encryptMessagePreview } from "@/lib/quoted-message";
 import Link from "next/link";
 import {
@@ -136,7 +136,7 @@ type RoomMember = {
   userId: string;
   role: string;
   isOnline?: boolean;
-  user: { name?: string; email?: string; pfp?: string | null } | null;
+  user: { name?: string; email?: string; pfp?: PfpMetadata | null } | null;
 };
 
 function mergeMessages(existing: UiMessage[], incoming: UiMessage[]): UiMessage[] {
@@ -2369,7 +2369,7 @@ export default function RoomChatPage() {
       isOwn: true,
       senderName: null,
       senderUserIndex: null,
-      senderPfp: session?.user?.image ?? null,
+      senderPfp: null,
       messageType: "audio",
       mediaMetadata: {
         type: "audio",

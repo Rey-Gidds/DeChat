@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ObjectId } from "mongodb";
 
+export * from "./pfp";
+
 export const CreateRoomSchema = z.object({
   name: z
     .string()

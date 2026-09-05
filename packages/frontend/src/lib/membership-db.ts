@@ -1,6 +1,7 @@
 import { ObjectId, type WithId } from "mongodb";
 import { db } from "./auth";
-import type { MembershipStatus, RoomMembership } from "./models";
+import type { MembershipStatus, RoomMembership, PfpMetadata } from "./models";
+
 import {
   getCachedRoomKickoutCount,
   invalidateKickoutCache,
@@ -152,7 +153,7 @@ export type EnrichedMembership = MembershipDoc & {
     email?: string;
     publicKey?: string;
     image?: string;
-    pfp?: string | null;
+    pfp?: PfpMetadata | null;
   } | null;
 };
 

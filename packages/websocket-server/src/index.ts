@@ -24,7 +24,7 @@ import { subscriptionManager } from "./subscription-manager";
 import { TypingLeaseManager } from "./typing-lease";
 import { UnreadCounterManager } from "./unread-counter";
 import { sendFCMPushNotification } from "./fcm";
-import type { AuthedSocket, MembershipCacheEntry } from "./types";
+import type { AuthedSocket, MembershipCacheEntry, PfpMetadata } from "./types";
 
 const app = express();
 const allowedOrigin =
@@ -1201,7 +1201,7 @@ io.on("connection", async (socket: AuthedSocket) => {
                 createdAt: (d.createdAt instanceof Date ? d.createdAt : new Date(d.createdAt)).toISOString(),
                 senderName: u?.name || u?.email || null,
                 senderUserIndex: mb?.userIndex ?? null,
-                senderPfp: (u?.pfp as string) ?? null,
+                senderPfp: (u?.pfp as PfpMetadata) ?? null,
               };
             });
           })();

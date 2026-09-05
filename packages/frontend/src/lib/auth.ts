@@ -87,14 +87,20 @@ export const auth = betterAuth({
                 type: "string",
                 required: false,
             },
+            // Stores PfpMetadata object; was formerly a base64 string
             pfp: {
-                type: "string",
+                type: "json",
                 required: false,
             },
             encryptionEnabled: {
                 type: "boolean",
                 required: false,
-            }
+            },
+            // Set to true during migration so the client can prompt re-upload
+            pfpNeedsReupload: {
+                type: "boolean",
+                required: false,
+            },
         },
     },
 });

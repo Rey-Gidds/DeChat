@@ -15,6 +15,8 @@ import { Compass, Clock, List, Grid3X3, User, LogOut } from "lucide-react";
 import { useUser } from "@/hooks/use-swr-hooks";
 import { GlobalSocketProvider } from "@/lib/global-socket-context";
 import { useEffect } from "react";
+import { pfpUrl } from "@/lib/pfp";
+
 
 // Profile excluded from footer — lives in header only
 const NAV_ITEMS = [
@@ -44,7 +46,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   const showKeygen = session?.user && !isPending && !isAuthPage && state === "setup-required";
   const userName = userProfile?.name || session?.user?.name || session?.user?.email;
-  const pfp = userProfile?.pfp;
+  const resolvedPfpUrl = pfpUrl(userProfile?.pfp);
+
 
   // ── FCM Service Worker & Push Registration ─────────────────────
   useEffect(() => {
@@ -151,9 +154,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                     }`}
                     title="Profile"
                   >
-                    {pfp ? (
+                    {resolvedPfpUrl ? (
                       <img
-                        src={pfp}
+                        src={resolvedPfpUrl}
                         alt={userName ?? ""}
                         className="h-7 w-7 rounded-full object-cover ring-1 ring-neutral-700"
                       />

@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { MemberActionDialog, type ActionMember } from "./member-action-dialog";
 import { approveJoinRequest } from "@/lib/room-membership-client";
 import { Avatar } from "../avatar";
+import type { PfpMetadata } from "@/lib/models";
+
 
 export type ViewerRole = "OWNER" | "ADMIN" | "MEMBER";
 
@@ -15,7 +17,7 @@ export interface RoomMemberEntry {
   role: "OWNER" | "ADMIN" | "MEMBER";
   isOnline?: boolean;
   userIndex?: number | null;
-  user: { name?: string; email?: string; publicKey?: string | null; pfp?: string | null } | null;
+  user: { name?: string; email?: string; publicKey?: string | null; pfp?: PfpMetadata | null } | null;
 }
 
 interface JoinRequest {
@@ -23,7 +25,7 @@ interface JoinRequest {
   membershipId: string;
   createdAt: string;
   reviewedAt?: string | null;
-  user: { name?: string; email?: string; publicKey: string | null; pfp?: string | null } | null;
+  user: { name?: string; email?: string; publicKey: string | null; pfp?: PfpMetadata | null } | null;
 }
 
 interface RoomOptionsPageProps {

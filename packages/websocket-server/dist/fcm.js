@@ -1,13 +1,8 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendFCMPushNotification = sendFCMPushNotification;
 const app_1 = require("firebase-admin/app");
 const messaging_1 = require("firebase-admin/messaging");
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
 const db_1 = require("./db");
 const mongodb_1 = require("mongodb");
 let initialized = false;
@@ -15,14 +10,13 @@ function initFirebaseAdmin() {
     if (initialized)
         return;
     try {
-        const jsonPath = path_1.default.resolve(__dirname, "../../frontend/dechat-3cd8a-firebase-adminsdk-fbsvc-438578a1f7.json");
-        if (fs_1.default.existsSync(jsonPath)) {
-            const serviceAccount = JSON.parse(fs_1.default.readFileSync(jsonPath, "utf8"));
+        if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+            const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
             (0, app_1.initializeApp)({
                 credential: (0, app_1.cert)(serviceAccount),
             });
             initialized = true;
-            console.log("[FCM] Firebase Admin SDK initialized via service account file.");
+            console.log("[FCM] Firebase Admin SDK initialized via FIREBASE_SERVICE_ACCOUNT_JSON env var.");
         }
         else if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
             (0, app_1.initializeApp)({
@@ -33,7 +27,7 @@ function initFirebaseAdmin() {
                 }),
             });
             initialized = true;
-            console.log("[FCM] Firebase Admin SDK initialized via env vars.");
+            console.log("[FCM] Firebase Admin SDK initialized via individual env vars.");
         }
         else {
             console.warn("[FCM] Firebase credentials not found. FCM push sending disabled.");

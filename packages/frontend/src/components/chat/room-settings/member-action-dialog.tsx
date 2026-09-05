@@ -3,11 +3,13 @@
 import { Modal } from "./modal";
 import { ShieldCheck, ShieldOff, Crown, UserX } from "lucide-react";
 import { Avatar } from "../avatar";
+import type { PfpMetadata } from "@/lib/models";
+
 
 export interface ActionMember {
   userId: string;
   role: "OWNER" | "ADMIN" | "MEMBER";
-  user: { name?: string; email?: string; pfp?: string | null } | null;
+  user: { name?: string; email?: string; pfp?: PfpMetadata | null } | null;
   userIndex?: number | null;
 }
 

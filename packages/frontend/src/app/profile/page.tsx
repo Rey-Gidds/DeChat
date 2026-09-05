@@ -11,6 +11,9 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { useUser, useMyRooms } from "@/hooks/use-swr-hooks";
 import { toast } from "sonner";
+import { pfpUrl } from "@/lib/pfp";
+import type { PfpMetadata } from "@/lib/pfp";
+
 
 interface UserProfile {
   id: string;
@@ -18,8 +21,10 @@ interface UserProfile {
   email: string;
   publicKey: string | null;
   image?: string;
-  pfp?: string | null;
+  pfp?: PfpMetadata | null;
+  pfpNeedsReupload?: boolean;
 }
+
 
 interface RoomMembership {
   roomId: string;
@@ -54,6 +59,14 @@ export default function ProfilePage() {
   // PFP state
   const [uploadingPfp, setUploadingPfp] = useState(false);
   const [pfpError, setPfpError] = useState("");
+
+  // One-time toast when server migration cleared the user's pfp
+  useEffect(() => {
+    if (profile?.pfpNeedsReupload) {
+      toast.info("Please re-upload your profile picture.", { duration: 10_000 });
+    }
+  }, [profile?.pfpNeedsReupload]);
+
 
   // Recovery kit state
   const [showRecoveryDownload, setShowRecoveryDownload] = useState(false);
@@ -99,11 +112,10 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 1 * 1024 * 1024) {
-      setPfpError("Image must be under 1 MB");
+    if (file.size > 2 * 1024 * 1024) {
+      setPfpError("Image must be under 2 MB");
       return;
     }
-
     if (!["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.type)) {
       setPfpError("Only JPEG, PNG, GIF, and WebP images are allowed");
       return;
@@ -112,21 +124,36 @@ export default function ProfilePage() {
     setUploadingPfp(true);
     setPfpError("");
     try {
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error("Failed to read file"));
-        reader.readAsDataURL(file);
-      });
-
-      const res = await fetch("/api/me/pfp", {
+      // 1. Get presigned upload URL from server
+      const urlRes = await fetch("/api/me/pfp/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ image: dataUrl }),
+        body: JSON.stringify({ mimeType: file.type, size: file.size }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to upload picture");
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error || "Failed to get upload URL");
+
+      const { uploadUrl, objectKey } = urlData;
+
+      // 2. Upload binary directly to R2 (no server involvement)
+      const uploadRes = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!uploadRes.ok) throw new Error("Upload to storage failed");
+
+      // 3. Confirm with server so it saves metadata to user document
+      const confirmRes = await fetch("/api/me/pfp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ objectKey, mimeType: file.type, size: file.size }),
+      });
+      const confirmData = await confirmRes.json();
+      if (!confirmRes.ok) throw new Error(confirmData.error || "Failed to save picture");
+
       toast.success("Profile picture updated");
       await mutateUser();
     } catch (err) {
@@ -136,6 +163,7 @@ export default function ProfilePage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
+
 
   async function handleRemovePfp() {
     setUploadingPfp(true);
@@ -212,8 +240,8 @@ export default function ProfilePage() {
               {/* Avatar with upload overlay */}
               <div className="relative shrink-0 h-16 w-16">
                 <div className="h-full w-full overflow-hidden rounded-full border border-neutral-700 bg-neutral-900 flex items-center justify-center">
-                  {profile.pfp ? (
-                    <img src={profile.pfp} alt="" className="h-full w-full object-cover" />
+                  {pfpUrl(profile.pfp) ? (
+                    <img src={pfpUrl(profile.pfp)!} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <User size={28} className="text-neutral-500" />
                   )}

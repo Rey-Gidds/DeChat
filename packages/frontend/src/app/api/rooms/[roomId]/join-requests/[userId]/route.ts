@@ -256,7 +256,7 @@ export async function POST(req: Request, context: RouteContext) {
     role: "MEMBER",
     userIndex: (updated as any)?.userIndex ?? null,
     userName: approvedUser?.name || approvedUser?.email || "",
-    userPfp: (approvedUser?.pfp as string) ?? null,
+    userPfp: approvedUser?.pfp ?? null,
     roomName: roomInfo?.name ?? "",
     memberCount: currentCount,
   });

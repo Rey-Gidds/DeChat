@@ -480,7 +480,7 @@ io.on("connection", async (socket) => {
             ack?.({ ok: false, error: "Encrypted payload is too large" });
             return;
         }
-        if (!["text", "image", "video", "gif"].includes(messageType)) {
+        if (!["text", "image", "video", "gif", "audio"].includes(messageType)) {
             ack?.({ ok: false, error: "Invalid messageType" });
             return;
         }
@@ -494,7 +494,7 @@ io.on("connection", async (socket) => {
             if (typeof replyToPayload.messageId !== "string" ||
                 typeof replyToPayload.senderId !== "string" ||
                 typeof replyToPayload.senderName !== "string" ||
-                !["text", "image", "video", "gif"].includes(replyToPayload.messageType)) {
+                !["text", "image", "video", "gif", "audio"].includes(replyToPayload.messageType)) {
                 ack?.({ ok: false, error: "Invalid replyTo payload" });
                 return;
             }

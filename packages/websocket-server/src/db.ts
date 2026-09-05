@@ -1,5 +1,7 @@
 import "./load-env";
 import { MongoClient, ObjectId } from "mongodb";
+import type { PfpMetadata } from "./types";
+
 
 function getMongoUri(): string {
   const uri = process.env.MONGODB_URI;
@@ -33,7 +35,7 @@ export async function isRoomDisabled(roomId: string): Promise<boolean> {
   return Boolean(room?.isDisabled);
 }
 
-export async function getSenderInfo(roomId: string, userId: string): Promise<{ name: string | null; userIndex: number | null; pfp: string | null }> {
+export async function getSenderInfo(roomId: string, userId: string): Promise<{ name: string | null; userIndex: number | null; pfp: PfpMetadata | null }> {
   const db = await getDb();
   const [user, membership] = await Promise.all([
     db.collection("user").findOne(
@@ -48,7 +50,7 @@ export async function getSenderInfo(roomId: string, userId: string): Promise<{ n
   return {
     name: user?.name || user?.email || null,
     userIndex: membership?.userIndex ?? null,
-    pfp: (user?.pfp as string) ?? null,
+    pfp: (user?.pfp as PfpMetadata) ?? null,
   };
 }
 
@@ -225,7 +227,7 @@ export async function fetchMessagesSince(
       createdAt: (doc.createdAt as Date).toISOString(),
       senderName: user?.name || user?.email || null,
       senderUserIndex: membership?.userIndex ?? null,
-      senderPfp: (user?.pfp as string) ?? null,
+      senderPfp: (user?.pfp as PfpMetadata) ?? null,
     };
   });
 }
@@ -377,7 +379,7 @@ export interface MutationPatches {
     messageType: string;
     senderName: string | null;
     senderUserIndex: number | null;
-    senderPfp: string | null;
+    senderPfp: PfpMetadata | null;
     replyTo: any | null;
   }>;
   deletes: Array<{ messageId: string }>;
@@ -453,7 +455,7 @@ export async function fetchMutationPatches(
         messageType: d.messageType as string,
         senderName: user?.name || user?.email || null,
         senderUserIndex: mem?.userIndex ?? null,
-        senderPfp: (user?.pfp as string) ?? null,
+        senderPfp: (user?.pfp as PfpMetadata) ?? null,
         replyTo,
       };
     });

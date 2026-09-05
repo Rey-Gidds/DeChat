@@ -1,6 +1,8 @@
 "use client";
 
 import { io, Socket } from "socket.io-client";
+import type { PfpMetadata } from "@/lib/models";
+
 
 export const USE_GLOBAL_SOCKET = process.env.NEXT_PUBLIC_USE_GLOBAL_SOCKET == "true";
 
@@ -50,7 +52,7 @@ export interface RealtimeRoomMessage {
   createdAt: string;
   senderName?: string | null;
   senderUserIndex?: number | null;
-  senderPfp?: string | null;
+  senderPfp?: PfpMetadata | null;
   clientMessageId?: string;       // present in ACK only; absent in broadcasts
 }
 

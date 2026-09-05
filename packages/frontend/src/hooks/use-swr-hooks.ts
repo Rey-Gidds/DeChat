@@ -3,6 +3,7 @@
 import useSWR, { useSWRConfig } from "swr";
 import { useEffect } from "react";
 import { SWR_KEYS } from "@/lib/swr-config";
+import type { PfpMetadata } from "@/lib/models";
 import {
   connectAsUser,
   USE_GLOBAL_SOCKET,
@@ -15,8 +16,10 @@ export interface UserProfileData {
   email: string;
   publicKey: string | null;
   image?: string;
-  pfp?: string | null;
+  pfp?: PfpMetadata | null;
+  pfpNeedsReupload?: boolean;
 }
+
 
 export interface MyRoomItem {
   roomId: string;

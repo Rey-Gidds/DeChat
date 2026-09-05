@@ -3,7 +3,9 @@ import { ObjectId } from "mongodb";
 import { db } from "@/lib/auth";
 import { requireSession } from "@/lib/api-auth";
 import { parseObjectId } from "@/lib/models";
+import type { PfpMetadata } from "@/lib/models";
 import { getMembership } from "@/lib/membership-db";
+
 
 type RouteContext = { params: Promise<{ roomId: string }> };
 
@@ -37,7 +39,7 @@ function serializeMessage(doc: Record<string, any>) {
     createdAt: doc.createdAt.toISOString(),
     senderName: null as string | null,
     senderUserIndex: null as number | null,
-    senderPfp: null as string | null,
+    senderPfp: null as PfpMetadata | null,
   };
 }
 
@@ -83,7 +85,7 @@ async function enrichMessagesWithSenders(
       ...msg,
       senderName: user?.name || user?.email || null,
       senderUserIndex: membership?.userIndex ?? null,
-      senderPfp: (user?.pfp as string) ?? null,
+      senderPfp: (user?.pfp as PfpMetadata) ?? null,
     };
   });
 }

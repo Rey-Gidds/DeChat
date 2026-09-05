@@ -2,7 +2,8 @@
 
 import { MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MediaMetadata, GifMetadata, ReplyToInfo } from "@/lib/models";
+import type { MediaMetadata, GifMetadata, ReplyToInfo, PfpMetadata } from "@/lib/models";
+
 import { MediaMessage } from "./media-message";
 import { AudioMessage } from "./audio-message";
 import { decryptReplyPreview } from "@/lib/quoted-message";
@@ -18,7 +19,7 @@ export interface UiMessage {
   isOwn?: boolean;
   senderName?: string | null;
   senderUserIndex?: number | null;
-  senderPfp?: string | null;
+  senderPfp?: PfpMetadata | null;
   messageType?: "text" | "image" | "video" | "gif" | "audio";
   mediaMetadata?: MediaMetadata;
   gifMetadata?: GifMetadata;
