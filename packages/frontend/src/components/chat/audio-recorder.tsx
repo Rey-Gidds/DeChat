@@ -16,7 +16,7 @@ export function AudioRecorder({
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(1);
-
+  const isDiscardedref = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -80,6 +80,7 @@ export function AudioRecorder({
       };
 
       recorder.onstop = () => {
+        if(isDiscardedref.current) return;
         const audioBlob = new Blob(chunksRef.current, { type: recorder.mimeType });
         const finalDuration = (Date.now() - startTimeRef.current) / 1000;
         if (finalDuration > 0.5) {
@@ -135,7 +136,7 @@ export function AudioRecorder({
       streamRef.current.getTracks().forEach((track) => track.stop());
     }
 
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+    if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
     }
 
@@ -153,6 +154,10 @@ export function AudioRecorder({
   };
 
   const cancelRecording = () => {
+    isDiscardedref.current = true;
+    if(mediaRecorderRef.current){
+      mediaRecorderRef.current.onstop = null;
+    }
     cleanupRecording();
     onCancel();
   };

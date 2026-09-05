@@ -176,7 +176,7 @@ export function GlobalSocketProvider({ children }: { children: React.ReactNode }
           p.messageType === "gif"   ? "sent a GIF"   :
           "sent a message";
         toast(`${p.senderName || "Someone"} ${label} in ${roomName}`, {
-          description: `Unread messages: ${p.unreadCount + 1}`,
+          description: `Unread messages: ${p.unreadCount}`,
           duration: 4000,
         });
       } catch {
